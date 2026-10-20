@@ -7,8 +7,9 @@ import { cloud } from "./api.js";
 import { describeAuthError, loginEmail } from "./identity.js";
 import { remember, verify } from "./offlineauth.js";
 import { runtime } from "./session.js";
+import { AppCtx } from "../appctx.js";
 
-const LABELS = { sale: "Sale", pay: "Credit repayment", po: "Purchase", exp: "Expense", expvoid: "Expense removed", cust: "New customer", custu: "Customer change", prod: "New product", produ: "Product change", prodx: "Product removed", open: "Opening stock", adj: "Stock change", br: "New branch", bru: "Branch change", dc: "Day close", shop: "Shop details", edit: "Price edit" };
+const LABELS = { sale: "Sale", pay: "Credit repayment", po: "Purchase", exp: "Expense", expvoid: "Expense removed", cust: "New customer", custu: "Customer change", prod: "New product", produ: "Product change", prodx: "Product removed", open: "Opening stock", adj: "Stock change", br: "New branch", bru: "Branch change", dc: "Day close", shop: "Shop details", edit: "Price edit", refund: "Customer return" };
 export const labelFor = (id) => LABELS[String(id).split(":")[0]] || "Change";
 
 // small status button in the top bar (Cloud mode only)
@@ -27,6 +28,7 @@ export function SyncChip({ sync }) {
 }
 
 export function SyncCenter({ sync, onClose }) {
+  const app = React.useContext(AppCtx);
   const [, force] = useState(0);
   useEffect(() => sync.rt.outbox.subscribe(() => force((x) => x + 1)), [sync.rt]);
   const all = sync.rt.outbox.list();
@@ -56,7 +58,7 @@ export function SyncCenter({ sync, onClose }) {
           <div style={styles.stack}>
             <div style={styles.emptyNote}><strong>Failed items stay on this phone</strong> but are not in the cloud. Try again, or discard them from the queue (the record stays on the phone and is not sent). New data from other phones is not downloaded while anything is failed or waiting.</div>
             <div className="sheet-actions">
-              <Button variant="danger" onClick={() => { if (window.confirm("Discard the failed items from the queue? They will stay on this phone but never be sent.")) { open.filter((i) => i.status === "failed").forEach((i) => sync.rt.outbox.discard(i.id)); sync.refresh(); } }}>Discard failed</Button>
+              <Button variant="danger" onClick={async () => { if (await app.confirm({ title: "Discard the failed items?", text: "They will stay on this phone but never be sent.", okLabel: "Discard", danger: true })) { open.filter((i) => i.status === "failed").forEach((i) => sync.rt.outbox.discard(i.id)); sync.refresh(); } }}>Discard failed</Button>
               <Button onClick={() => { open.filter((i) => i.status === "failed").forEach((i) => sync.rt.outbox.retry(i.id)); sync.syncNow(); }}>Try again</Button>
             </div>
           </div>

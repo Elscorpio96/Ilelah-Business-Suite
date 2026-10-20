@@ -2,6 +2,7 @@
 // In Cloud mode the app uses the cloud's UUIDs as its local IDs, so no translation table is needed after the import.
 const num = (v) => { const x = Number(v); return Number.isFinite(x) ? x : 0; };
 const day = (v) => (v ? String(v).slice(0, 10) : "");
+import { localDateStr } from "../dates.js";
 
 // ---------- app -> cloud (what gets queued) ----------
 export function saleToPayload(sale, { deviceId } = {}) {
@@ -30,14 +31,21 @@ export function productFromCloud(p, stockRows = []) {
   return { id: p.id, name: p.name, sku: p.sku, barcode: p.barcode || "", category: p.category || "", cost: num(p.cost), price: num(p.price), lowStock: num(p.low_stock), quick: !!p.quick, stock };
 }
 export const customerFromCloud = (c) => ({ id: c.id, name: c.name, phone: c.phone || "", remindedAt: c.reminded_at || undefined, discountPct: num(c.discount_pct) });
-export function saleFromCloud(s, items = []) {
+export function returnsFromCloud(saleId, saleItems, refunds = [], refundItems = []) {
+  return refunds.filter((r) => r.sale_id === saleId).map((r) => ({
+    id: r.id, time: r.created_at, date: r.created_at ? localDateStr(new Date(r.created_at)) : "", by: "", reason: r.reason || "", restock: !!r.restock, amount: num(r.amount), cashBack: num(r.cash_back),
+    items: refundItems.filter((x) => x.refund_id === r.id).map((x) => { const si = saleItems.find((i) => i.id === x.sale_item_id) || {}; return { productId: si.product_id, name: si.name || "", qty: num(x.qty), amount: num(x.amount), cost: num(si.unit_cost) }; }),
+  }));
+}
+export function saleFromCloud(s, items = [], refunds = [], refundItems = []) {
+  const mine = items.filter((i) => i.sale_id === s.id);
   return {
     id: s.id, invoiceNo: s.invoice_no, date: day(s.business_date), time: s.sold_at, branchId: s.branch_id,
     cashierId: s.cashier_id, cashierName: s.cashier_name || "", customerId: s.customer_id || null, customerName: s.customer_name || "", customerPhone: s.customer_phone || "",
     paymentType: s.payment_method === "credit" ? "credit" : "cash", dueDate: day(s.due_date),
     amountTendered: num(s.amount_paid), balanceDue: num(s.balance_due), total: num(s.total), cost: num(s.cost_total),
-    status: s.status, edited: !!s.edited_at, editedAt: s.edited_at || undefined, synced: true,
-    items: items.filter((i) => i.sale_id === s.id).map((i) => ({ productId: i.product_id, name: i.name, qty: num(i.qty), price: num(i.unit_price), discount: num(i.discount), cost: num(i.unit_cost) })),
+    status: s.status, refundedTotal: num(s.refunded_total), returns: returnsFromCloud(s.id, mine, refunds, refundItems), edited: !!s.edited_at, editedAt: s.edited_at || undefined, synced: true,
+    items: mine.map((i) => ({ productId: i.product_id, name: i.name, qty: num(i.qty), price: num(i.unit_price), discount: num(i.discount), cost: num(i.unit_cost) })),
   };
 }
 export const creditPaymentFromCloud = (c) => ({ id: c.id, receiptNo: c.receipt_no, customerId: c.customer_id, amount: num(c.amount), date: day(c.business_date), time: c.paid_at, note: c.note || "", branchId: c.branch_id, cashierName: c.received_by_name || "" });

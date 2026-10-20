@@ -9,8 +9,8 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // Android only accepts an update if versionCode is higher than the installed one.
         // CI sets VERSION_CODE automatically; when building by hand, raise the fallback number each release.
-        versionCode (System.getenv("VERSION_CODE") ? System.getenv("VERSION_CODE").toInteger() : 11)
-        versionName (System.getenv("VERSION_NAME") ?: "1.10")
+        versionCode (System.getenv("VERSION_CODE") ? System.getenv("VERSION_CODE").toInteger() : 16)
+        versionName (System.getenv("VERSION_NAME") ?: "1.15")
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

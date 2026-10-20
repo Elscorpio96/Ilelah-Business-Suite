@@ -7,6 +7,10 @@ export interface Deps {
   deleteAuthUser(id: string): Promise<void>;
   addMember(args: { actor: string; shop: string; user: string; username: string; name: string; role: string; branch: string | null }): Promise<void>;
   callerShop(userId: string): Promise<{ shop_id: string; shop_code: string; role: string; active: boolean } | null>;
+  // password reset (optional so older tests/deployments of the other action keep working)
+  getMember?(shop: string, userId: string): Promise<{ role: string; active: boolean } | null>;
+  setPassword?(userId: string, password: string): Promise<void>;
+  auditReset?(args: { shop: string; actor: string; target: string }): Promise<void>;
 }
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "access-control-allow-origin": "*" } });
 
@@ -21,6 +25,20 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   if (!me || !me.active || !["owner", "admin"].includes(me.role)) return json(403, { error: "Only the owner or an admin can add staff." });
 
   let b: any; try { b = await req.json(); } catch { return json(400, { error: "Bad request." }); }
+  if (b && b.action === "reset_password") {
+    const target = String(b.user_id || ""); const pw = String(b.password || "");
+    if (!target) return json(400, { error: "Choose who to reset." });
+    if (pw.length < 8) return json(400, { error: "Password must be at least 8 characters." });
+    if (target === caller.id) return json(400, { error: "Use your own sign-in screen to change your own password." });
+    if (!deps.getMember || !deps.setPassword) return json(501, { error: "Password reset is not available on this server." });
+    const t = await deps.getMember(me.shop_id, target);       // only people in the caller's own shop are visible here
+    if (!t) return json(404, { error: "That person is not in your shop." });
+    if (t.role === "owner") return json(403, { error: "The owner's password cannot be reset here." });
+    if (t.role === "admin" && me.role !== "owner") return json(403, { error: "Only the owner can reset an admin's password." });
+    try { await deps.setPassword(target, pw); } catch { return json(400, { error: "Could not change the password." }); }
+    if (deps.auditReset) await deps.auditReset({ shop: me.shop_id, actor: caller.id, target }).catch(() => {});
+    return json(200, { ok: true });
+  }
   const username = String(b.username || "").trim().toLowerCase().replace(/\s+/g, "");
   const name = String(b.name || "").trim();
   const role = String(b.role || "");

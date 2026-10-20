@@ -1,4 +1,4 @@
-import { lineDiscount, saleDiscount, saleSubtotal } from "./lines.js";
+import { lineDiscount, saleDiscount, saleSubtotal, saleQty, saleRefunded, saleNet } from "./lines.js";
 // ESC/POS receipt builder for 58 mm (32 chars) and 80 mm (48 chars) thermal printers.
 // Pure functions: no Android code in here, so it can be tested anywhere.
 const ESC = 0x1b, GS = 0x1d, LF = 0x0a;
@@ -85,14 +85,19 @@ export function saleReceipt(sale, settings, branch, { width = 32, money }) {
   if (credit && sale.customerPhone) e.wrap(`Phone: ${sale.customerPhone}`);
   if (credit && sale.dueDate) e.wrap(`Payment due by: ${sale.dueDate}`);
   e.hr();
+  let sn = 0;
   for (const i of sale.items || []) {
-    e.wrap(i.name);
+    sn += 1;
+    e.wrap(`${sn}. ${i.name}`);
     e.lr(`  ${i.qty} x ${m(i.price)}`, m(i.price * i.qty));
     if (lineDiscount(i) > 0) e.lr("  discount", "-" + m(lineDiscount(i)));
   }
+  e.hr();
+  e.lr(`Items: ${(sale.items || []).length}`, `Total qty: ${saleQty(sale.items)}`);
   if (saleDiscount(sale.items) > 0) { e.lr("Subtotal", m(saleSubtotal(sale.items))); e.lr("Discount", "-" + m(saleDiscount(sale.items))); }
   e.hr();
   e.bold(true).lr("TOTAL", m(sale.total)).bold(false);
+  if (saleRefunded(sale) > 0) { e.lr("Returned", "-" + m(saleRefunded(sale))); e.bold(true).lr("NET", m(saleNet(sale))).bold(false); }
   if (credit) {
     e.lr("Deposit paid", m(sale.amountTendered));
     e.bold(true).lr("AMOUNT OWED", m(sale.balanceDue)).bold(false);

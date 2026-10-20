@@ -20,13 +20,20 @@ export function deriveOps(name, prev, next, ctx, uuid, tag) {
       for (const s of next) {
         const old = P.get(s.id);
         if (!old) out.push(rpc("sale:" + s.id, "record_sale", { p: saleToPayload(s, ctx) }));
-        else if (s.edited && s.editedAt !== old.editedAt) out.push(rpc(`edit:${s.id}:${s.editedAt}`, "edit_sale_prices", { p_sale: s.id, p_prices: (s.items || []).map((i) => ({ product_id: i.productId, unit_price: num(i.price), discount: num(i.discount) })), p_reason: "Price or discount corrected on the phone" }));
+        else if ((s.returns || []).length > ((old.returns || []).length)) {
+          const known = new Set((old.returns || []).map((r) => r.id));
+          for (const r of s.returns) if (!known.has(r.id)) out.push(rpc("refund:" + r.id, "refund_sale", { p_sale: s.id, p_items: r.items.map((i) => ({ product_id: i.productId, qty: num(i.qty) })), p_restock: !!r.restock, p_reason: r.reason || "Customer return", p_request: r.id }));
+        }
+        else if (s.edited && s.editedAt !== old.editedAt) out.push(rpc(`edit:${s.id}:${s.editedAt}`, "edit_sale_prices", { p_sale: s.id, p_prices: (s.items || []).map((i) => ({ product_id: i.productId, qty: num(i.qty), unit_price: num(i.price), discount: num(i.discount) })), p_reason: "Quantity, price or discount corrected on the phone" }));
       }
       break;
     case "creditPayments": for (const p of next) if (!P.has(p.id)) out.push(rpc("pay:" + p.id, "record_credit_payment", { p: creditPaymentToPayload(p, ctx) })); break;
     case "purchases": for (const p of next) if (!P.has(p.id)) out.push(rpc("po:" + p.id, "receive_purchase", { p: purchaseToPayload(p) })); break;
     case "expenses":
-      for (const e of next) if (!P.has(e.id)) out.push(db("exp:" + e.id, "insert", "expenses", { row: { id: e.id, shop_id: ctx.shopId, branch_id: e.branchId, expense_date: e.date, category: e.category, amount: num(e.amount), note: e.note || "", created_by: ctx.userId }, ignoreDuplicates: true }));
+      for (const e of next) if (!P.has(e.id)) {
+        out.push(db("exp:" + e.id, "insert", "expenses", { row: { id: e.id, shop_id: ctx.shopId, branch_id: e.branchId, expense_date: e.date, category: e.category, amount: num(e.amount), note: e.note || "", created_by: ctx.userId }, ignoreDuplicates: true }));
+        out.push(db("expun:" + e.id + ":" + uuid(), "update", "expenses", { patch: { voided_at: null }, match: { id: e.id } }));        // Undo of a removal
+      }
       for (const e of prev) if (!N.has(e.id)) out.push(db("expvoid:" + e.id, "update", "expenses", { patch: { voided_at: "@now" }, match: { id: e.id } }));
       break;
     case "customers":
@@ -41,6 +48,7 @@ export function deriveOps(name, prev, next, ctx, uuid, tag) {
         const old = P.get(p.id);
         if (!old) {
           out.push(db("prod:" + p.id, "insert", "products", { row: productRow(p, ctx.shopId), ignoreDuplicates: true }));
+          out.push(db("produn:" + p.id + ":" + uuid(), "update", "products", { patch: { archived_at: null }, match: { id: p.id } }));      // brings back a product that was removed a moment ago (Undo)
           if (!tag) for (const [b, q] of Object.entries(p.stock || {})) if (num(q) !== 0) out.push(rpc("open:" + p.id + ":" + b, "adjust_stock_by", { p_request: uuid(), p_branch: b, p_product: p.id, p_delta: num(q), p_reason: "Opening stock" }));
           continue;
         }

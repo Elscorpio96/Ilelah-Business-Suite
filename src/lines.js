@@ -42,3 +42,39 @@ export function canEditSale(user, sale, today) {
   const mine = sale.cashierId ? sale.cashierId === user.id : sale.cashierName === user.name;
   return mine && sale.date === today;
 }
+
+// total number of units on a sale (sum of line quantities)
+export const saleQty = (items) => Math.round((items || []).reduce((a, i) => a + n(i.qty), 0) * 1000) / 1000;
+
+// ---------- customer returns ----------
+// sale.returns = [{ id, time, date, by, reason, restock, amount, cashBack, items: [{ productId, name, qty, amount, cost }] }]
+// (In Cloud mode a cashier cannot read the detail, only sale.refundedTotal, so that is the fallback.)
+export const saleReturns = (s) => (s && Array.isArray(s.returns) ? s.returns : []);
+export const saleRefunded = (s) => { const r = saleReturns(s); return r.length ? round2(r.reduce((a, x) => a + n(x.amount), 0)) : round2(n(s && s.refundedTotal)); };
+export const saleCashBack = (s) => round2(saleReturns(s).reduce((a, x) => a + n(x.cashBack), 0));
+export const saleNet = (s) => round2(n(s.total) - saleRefunded(s));
+// cost of goods that went back on the shelf no longer counts as cost; damaged goods stay a cost
+export const saleReturnedCost = (s) => round2(saleReturns(s).filter((r) => r.restock).reduce((a, r) => a + (r.items || []).reduce((b, i) => b + n(i.qty) * n(i.cost), 0), 0));
+export const saleNetCost = (s) => round2(n(s.cost) - saleReturnedCost(s));
+// money received at the till when the sale was made (balanceDue has since been reduced by returns that cleared debt)
+export const saleCollectedAtSale = (s) => round2(n(s.total) - (n(s.balanceDue) + saleReturns(s).reduce((a, r) => a + n(r.amount) - n(r.cashBack), 0)));
+// how many of one product have already come back from this sale
+export const returnedQty = (s, productId) => saleReturns(s).reduce((a, r) => a + (r.items || []).filter((i) => i.productId === productId).reduce((b, i) => b + n(i.qty), 0), 0);
+export const returnableQty = (s, i) => Math.max(0, round2(n(i.qty) - returnedQty(s, i.productId)));
+
+// Works out a return of { productId: qty } from a sale. Pure; the caller applies stock and saves.
+// amount per unit = what that line really cost after discounts. Credit sales: the debt is cleared before any cash goes back.
+export function buildReturn(sale, qtys, { restock = true, reason = "", by = "", id, now = new Date(), date } = {}) {
+  const items = []; let amount = 0;
+  for (const it of sale.items || []) {
+    const q = n(qtys[it.productId]); if (!(q > 0)) continue;
+    if (q > returnableQty(sale, it) + 1e-9) throw new Error("return_qty_too_high");
+    const amt = round2(lineTotal(it) * q / n(it.qty));
+    items.push({ productId: it.productId, name: it.name, qty: q, amount: amt, cost: n(it.cost) }); amount = round2(amount + amt);
+  }
+  if (!items.length || amount <= 0) throw new Error("nothing_to_return");
+  const back = Math.min(Math.max(0, n(sale.balanceDue)), amount);
+  const cashBack = round2(amount - back);
+  const ret = { id, time: now.toISOString(), date, by, reason, restock: !!restock, amount, cashBack, items };
+  return { ret, balanceDue: round2(n(sale.balanceDue) - back) };
+}

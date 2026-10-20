@@ -8,7 +8,7 @@ import {
   Eye, EyeOff, Trash2, Minus, ScanBarcode, Flashlight, Banknote, TrendingUp, TrendingDown, Boxes, FileSpreadsheet, ShieldCheck,
   Info, CircleCheck, CircleAlert, Phone, Calendar, ChevronDown, Tag, Clock, Inbox, PackageOpen, ArrowUpRight, ArrowDownRight,
   Bluetooth, KeyRound, Share2, Copy, RefreshCw, Save, Building2, UserPlus, HandCoins, ReceiptText, CalendarDays, CircleX,
-  History, ListFilter, Layers, Image as ImageIcon, Zap, BadgeCheck, Smartphone, FileText, ShoppingBag, Wifi, Bell,
+  Pause, History, ListFilter, Layers, Image as ImageIcon, Zap, BadgeCheck, Smartphone, FileText, ShoppingBag, Wifi, Bell,
 } from "lucide-react";
 import { colors, CURRENCY } from "./theme.js";
 import { styles } from "./styles.js";
@@ -20,7 +20,7 @@ export {
   Eye, EyeOff, Trash2, Minus, ScanBarcode, Flashlight, Banknote, TrendingUp, TrendingDown, Boxes, FileSpreadsheet, ShieldCheck,
   Info, CircleCheck, CircleAlert, Phone, Calendar, ChevronDown, Tag, Clock, Inbox, PackageOpen, ArrowUpRight, ArrowDownRight,
   Bluetooth, KeyRound, Share2, Copy, RefreshCw, Save, Building2, UserPlus, HandCoins, ReceiptText, CalendarDays, CircleX,
-  History, ListFilter, Layers, ImageIcon, Zap, BadgeCheck, Smartphone, FileText, ShoppingBag, Wifi, Bell,
+  Pause, History, ListFilter, Layers, ImageIcon, Zap, BadgeCheck, Smartphone, FileText, ShoppingBag, Wifi, Bell,
 };
 
 // ---------- Android back button support ----------
@@ -202,14 +202,28 @@ export function Modal({ title, onClose, children }) {
   );
 }
 
-export function Toast({ toast }) {
+export function Toast({ toast, onDismiss }) {
   if (!toast) return null;
   const err = toast.kind === "err";
   return (
     <div className={"toast " + (err ? "toast-err" : "toast-ok")} role="status" aria-live="polite" key={toast.id}>
       {err ? <CircleAlert className="toast-ic" size={18} /> : <CircleCheck className="toast-ic" size={18} />}
       <span>{toast.msg}</span>
+      {toast.action && <button type="button" onClick={() => { try { toast.action.run(); } finally { onDismiss && onDismiss(); } }} style={{ marginLeft: 6, background: "rgba(255,255,255,0.16)", color: "#fff", border: "none", borderRadius: 9, padding: "4px 12px", fontWeight: 700, fontSize: 13.5 }}>{toast.action.label}</button>}
     </div>
+  );
+}
+
+// A yes/no question in the app's own style (replaces the browser's confirm box).
+export function ConfirmModal({ title, text, okLabel = "Yes", cancelLabel = "Cancel", danger, onYes, onNo }) {
+  return (
+    <Modal title={title} onClose={onNo}>
+      {text && <p style={{ color: "var(--ink-soft)", lineHeight: 1.5, margin: "4px 0 0" }}>{text}</p>}
+      <div className="sheet-actions">
+        <Button variant="secondary" onClick={onNo}>{cancelLabel}</Button>
+        <Button variant={danger ? "danger" : "primary"} onClick={onYes}>{okLabel}</Button>
+      </div>
+    </Modal>
   );
 }
 

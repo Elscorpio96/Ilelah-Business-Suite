@@ -1,4 +1,4 @@
-# Ilelah Business Suite — deployment, backup and cost guide (Cloud mode, v1.10)
+# Ilelah Business Suite — deployment, backup and cost guide (Cloud mode, v1.12)
 
 Everything here is optional per shop. A phone that is never switched stays in **Local mode** and behaves exactly as before.
 
@@ -28,7 +28,7 @@ Or set `SUPABASE_URL` and `SUPABASE_ANON_KEY` when building. No file/variables =
 2. SQL Editor → run `supabase/migrations/0001` … `0007` in order. **If you already ran 0001–0006, run only `0007_discounts.sql`** (adds discounts, regular-customer %, and cashier same-day price correction) (it also repairs two things found in testing: a function that needed an extension Supabase keeps out of reach, and a retry race on purchases).
 3. Authentication → Email enabled, minimum password length 8.
 4. `supabase functions deploy create-staff` (see `supabase/SETUP.md`).
-5. Build and install the app (`npm run sync`, then your usual signed release). Version 1.10 / versionCode 11.
+5. Build and install the app (`npm run sync`, then your usual signed release). Version 1.12 / versionCode 13.
 6. Build and publish the dashboard: `npm run build:dashboard`, upload `dashboard-dist/` to any static host.
 
 ## 4. Rolling a shop onto the cloud (recommended order)
@@ -94,9 +94,46 @@ Pro's 8 GB holds roughly 2.4 million sales on the same arithmetic. Rule of thumb
 
 Sources: [Supabase pricing](https://supabase.com/pricing).
 
-## 9. Discounts, history and corrections (v1.10)
+## 9. Discounts, history and corrections (v1.12)
 * **Discounts:** per line and per sale, as ₦ or %. Stored per line (price before discount + ₦ discount), so receipts, reports, Excel and the cloud all agree. Any cashier may give discounts. Not built: an owner-set cap on how large a cashier discount can be.
 * **Regular customers:** a customer can carry a standing %. Typing their name at checkout fills it in; the cashier can change or clear it. Only the owner/manager sets it (Credit → customer, or "Make this their regular discount" at checkout). The server refuses anyone else.
 * **History tab:** every user sees the sales they made (owner sees all, with branch filter); Today / Yesterday / 7 days / dates; search by customer, invoice no. or item; tap to reopen, print or share.
 * **Corrections:** owner can change price and discount on any sale; a cashier only on their own sale of the same shop-day. Stock is not changed; credit balances recalculate; every change is written to the audit log (cloud).
 * Cloud: run `0007_discounts.sql` once; tests `lines` and `discounts` are in `supabase/tests/run-all.sh`.
+
+## 10. v1.11 — held sales and receipt layout
+* **Hold:** in the cart, *Hold* parks the current sale (items, customer, discount) so another customer can be served; *On hold (n)* brings it back. Held sales live on that phone only and do not reserve stock; on resume, quantities are trimmed to what is still in stock. No database change.
+* **Receipts** (screen, printed, image, text) now carry an S/N column, *Items* and *Total qty* lines, and smaller text.
+
+## 11. v1.12 — staff password reset and shop code
+* **Shop code** is shown (with Copy) in Settings → Cloud account for the owner/admin. If ever lost: Supabase → Table Editor → `shops` → `code`.
+* **Staff passwords can never be viewed** (Supabase stores only a hash). Settings → Cloud account → tap the person → **Reset password** (type one or *Make one for me*, then *Share login details*). Owner can reset anyone but the owner; an admin can reset managers and cashiers. Each reset is written to the audit log.
+* **You must redeploy the function once:** `supabase functions deploy create-staff` (it now also handles password resets). No SQL migration for this release.
+
+## 12. v1.13 — dark mode, returns, PIN lock, setup wizard, undo
+* **Cloud: run `supabase/migrations/0008_returns.sql` once** (after 0007). Local-mode shops need nothing.
+* **Dark mode & text size** — account menu (top-right) → Appearance (Light / Dark / Follow phone) and Text size. Per phone; receipts always print white.
+* **Today at a glance** — owner/admin home card: sales, cash collected, profit, refunds, credit given, low stock.
+* **Returns / refunds** — open a receipt → Return items. Pick quantities, reason, restock yes/no. Credit sales: refund first reduces the customer's balance, any remainder is cash back. Sale total stays as sold; reports show Returned and Net. Day-close subtracts cash refunds. Who can: owner/admin always; in Local mode a cashier needs an owner/admin PIN (if no admin has a PIN, allowed). In Cloud mode only owner/admin (enforced by the server); cashiers see only the refunded total. Price editing is hidden once a sale has a return.
+* **First-time setup wizard** — shows once for a new shop (business details → first product → done); can be skipped.
+* **Undo & confirm** — Undo toast after removing a cart line, deleting a product or expense, discarding a held sale; confirm dialogs for risky actions.
+* **PIN lock** — 4-digit PIN per user (account menu → PIN lock), auto-lock Off/1/5/15 min, 5 wrong tries = 30 s wait. Local mode: the lock screen lets another user sign in by PIN (fast cashier switch). Cloud mode: locks the current session only (no user switching; sign out to change user).
+* **Limits** — PINs and held sales are per phone: not synced, not included in backups. PINs are never viewable. If a PIN is forgotten, On the lock screen tap "Forgot PIN? Sign out", then sign in again with the account password (Local and Cloud) and set a new PIN.
+* Tests: `returns` added to `supabase/tests/run-all.sh`.
+
+## 13. v1.14 — new logo, and how to update shops that are already live
+**New logo:** launcher icon, round icon and the in-app logo (activation screen, sign-in, top bar) now use the Ilelah "IS" mark on navy. The splash screen is unchanged.
+
+**Updating a shop that already uses the app (Local or Cloud):**
+1. **Cloud shops only — run the SQL first.** In the shop's Supabase → SQL Editor run `0008_returns.sql` then `0009_edit_quantity.sql`, once each (skip any already run). It is additive: it adds one column + one index to `refunds` and replaces the `refund_sale` function. It does not touch sales, products, customers or users, and phones still on v1.12 keep working while it runs. Running it twice is harmless. The v1.13/v1.14 app also works *before* 0008 is run (only refunds from a cloud phone would fail until it is), so the order is not dangerous, but do SQL first.
+2. **Back up before updating.** On each phone: Settings → Backup. For Cloud shops also download an Excel export of Reports.
+3. **Install the new APK over the old one** — do not uninstall. It must be signed with the **same keystore** (`tally-release.jks`) and have a higher versionCode (now 16); otherwise Android refuses the update or, if the old app is uninstalled, the phone's data is lost. Local-mode data stays on the phone through an update.
+4. **Phones can be updated one at a time.** v1.12 and v1.14 phones can sync with the same Supabase together. Until a phone is updated it will show a refunded sale at its full amount (it does not read refund totals); everything else matches.
+5. Nothing changes for staff passwords, shop code, branches or licensing. Dark mode, PIN lock and text size start OFF/default on each phone.
+
+## 14. v1.15 — edit quantity on a recorded sale
+* Open a receipt → **Edit sale** (was "Edit prices") → change **quantity**, price and discount per item. Totals, amount owed and profit recalculate; **stock moves by the difference** (fewer sold = put back; more sold = taken off).
+* Same permission as price edits: owner/admin any sale; cashier only their own sale from today. Quantity must stay above 0 — to take an item off completely use **Return items**. Not available once a sale has a return.
+* Local mode refuses a quantity larger than the stock on hand. Cloud mode lets the server accept it and flags a stock discrepancy (same as an offline sale).
+* **Cloud shops: run `supabase/migrations/0009_edit_quantity.sql` BEFORE updating phones** (it replaces `edit_sale_prices`; additive, safe to run twice, old phones keep working). A new phone talking to a database without 0009 would change the quantity on the phone but not in the cloud.
+* Every quantity change is written to the stock ledger and the audit log (who, why, before/after). Tests added to `discounts.test.mjs` (29 pass).

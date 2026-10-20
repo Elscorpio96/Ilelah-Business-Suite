@@ -78,4 +78,21 @@ await as("joy", "update customers set phone='0801' where id=$1", [cust]); eq("a 
 await denied("discount over 100% is refused", () => as("owner", "update customers set discount_pct=150 where id=$1", [cust]), /check|violates/);
 const st1 = await rpc("owner", "shop_stamp"); await as("owner", "update customers set discount_pct=5 where id=$1", [cust]); const st2 = await rpc("owner", "shop_stamp");
 eq("changing a discount changes the catalog stamp only", [st1.catalog !== st2.catalog, st1.sales === st2.sales, st1.books === st2.books], [true, true, true]);
+
+// 4. quantity correction (0009)
+const stock = async (p) => num((await as("super", "select qty from stock_levels where product_id=$1 and branch_id=$2", [p, br])).rows[0].qty);
+const s3 = mk([{ product_id: A, qty: 5, unit_price: 1000 }, { product_id: B, qty: 2, unit_price: 500 }]); await rpc("joy", "record_sale", s3);
+const sA0 = await stock(A), sB0 = await stock(B);
+await rpc("joy", "edit_sale_prices", s3.id, [{ product_id: A, qty: 3 }], "customer took only 3"); r = await row(s3.id);
+eq("fewer sold: total follows and stock is put back", [num(r.total), await stock(A), await stock(B)], [4000, sA0 + 2, sB0]);
+eq("sale cost follows the new quantity", num((await as("super", "select cost_total from sales where id=$1", [s3.id])).rows[0].cost_total), 250);
+await rpc("owner", "edit_sale_prices", s3.id, [{ product_id: B, qty: 6, unit_price: 500 }], "owner fix"); r = await row(s3.id);
+eq("more sold: total grows and stock goes down", [num(r.total), await stock(B)], [6000, sB0 - 4]);
+await denied("quantity 0 is refused", () => rpc("owner", "edit_sale_prices", s3.id, [{ product_id: A, qty: 0 }], "x"), /invalid_qty/);
+await denied("another cashier cannot change quantity", () => rpc("kemi", "edit_sale_prices", s3.id, [{ product_id: A, qty: 1 }], "x"), /edit_not_allowed/);
+const mv = (await as("super", "select count(*)::int c, sum(delta) d from stock_movements where ref_id=$1 and ref_type='sale_edit'", [s3.id])).rows[0];
+eq("every stock change is in the ledger", [mv.c, num(mv.d)], [2, -2]);
+const s4 = mk([{ product_id: A, qty: 4, unit_price: 1000 }]); await rpc("joy", "record_sale", s4);
+await rpc("owner", "refund_sale", s4.id, [{ product_id: A, qty: 1 }], true, "bad", null);
+await denied("quantity cannot change once a return exists", () => rpc("owner", "edit_sale_prices", s4.id, [{ product_id: A, qty: 2 }], "x"), /sale_not_editable|sale_has_returns/);
 console.log(`${pass} passed, ${fail} failed`); if (fail) process.exit(1);

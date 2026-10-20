@@ -80,12 +80,14 @@ export function createRuntime({ storage, transport, uuid = () => crypto.randomUU
       }
       let cursor = since || null;
       if (parts.sales) {
-        const SALE = "id,invoice_no,business_date,sold_at,branch_id,cashier_id,cashier_name,customer_id,customer_name,customer_phone,payment_method,due_date,amount_paid,balance_due,total,cost_total,status,edited_at,synced_at";
+        const SALE = "id,invoice_no,business_date,sold_at,branch_id,cashier_id,cashier_name,customer_id,customer_name,customer_phone,payment_method,due_date,amount_paid,balance_due,total,cost_total,refunded_total,status,edited_at,synced_at";
         const salesRaw = await all("sales", SALE, since ? { gt: { synced_at: since }, order: "synced_at" } : { order: "synced_at" });
-        const itemsRaw = since ? await inChunks("sale_items", "sale_id,product_id,name,qty,unit_price,discount,unit_cost", "sale_id", salesRaw.map((s) => s.id)) : await all("sale_items", "sale_id,product_id,name,qty,unit_price,discount,unit_cost");
+        const itemsRaw = since ? await inChunks("sale_items", "sale_id,id,product_id,name,qty,unit_price,discount,unit_cost", "sale_id", salesRaw.map((s) => s.id)) : await all("sale_items", "sale_id,id,product_id,name,qty,unit_price,discount,unit_cost");
+        const refRaw = salesRaw.some((s) => Number(s.refunded_total) > 0) ? await inChunks("refunds", "id,sale_id,amount,cash_back,restock,reason,created_at", "sale_id", salesRaw.filter((s) => Number(s.refunded_total) > 0).map((s) => s.id)).catch(() => []) : [];   // managers/owners only; others keep the total
+        const refItemRaw = refRaw.length ? await inChunks("refund_items", "refund_id,sale_item_id,qty,amount", "refund_id", refRaw.map((r) => r.id)).catch(() => []) : [];
         const payRaw = await all("credit_payments", "id,receipt_no,customer_id,amount,business_date,paid_at,note,branch_id,received_by_name,synced_at", since ? { gt: { synced_at: since } } : {});
         const live = salesRaw.filter((s) => s.status !== "voided");
-        out.sales = live.map((s) => M.saleFromCloud(s, itemsRaw));
+        out.sales = live.map((s) => M.saleFromCloud(s, itemsRaw, refRaw, refItemRaw));
         out.voidedSaleIds = salesRaw.filter((s) => s.status === "voided").map((s) => s.id);
         out.creditPayments = payRaw.map(M.creditPaymentFromCloud);
         cursor = [...salesRaw.map((s) => s.synced_at), ...payRaw.map((p) => p.synced_at)].filter(Boolean).sort().pop() || since || null;

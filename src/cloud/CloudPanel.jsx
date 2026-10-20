@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Cloud, UserPlus, LogOut } from "lucide-react";
+import { Cloud, UserPlus, LogOut, KeyRound, Copy } from "lucide-react";
+import { shareText } from "../native.js";
+import { AppCtx } from "../appctx.js";
 import { styles } from "../styles.js";
 import { colors } from "../theme.js";
 import { Badge, Button, Field, Modal, Row, List, SectionHeader, Segmented } from "../ui.jsx";
@@ -16,11 +18,15 @@ const ROLE_LABEL = { owner: "Owner", admin: "Admin", manager: "Manager", cashier
 // Shown in Settings. Renders nothing at all in builds that have no cloud project configured,
 // so shops that stay in Local mode see no change.
 export function CloudPanel({ showToast, fullState, onBackup }) {
+  const app = React.useContext(AppCtx);
   const [me, setMe] = useState(undefined);        // undefined = checking, null = signed out
   const [dialog, setDialog] = useState(null);     // "signin" | "signup" | "staff"
   const [busy, setBusy] = useState(false);
   const [f, setF] = useState({ shop: "", id: "", pw: "", email: "", shopName: "", name: "" });
   const [staff, setStaff] = useState([]);
+  const [shopCode, setShopCode] = useState("");
+  const [member, setMember] = useState(null);        // staff row opened for actions
+  const [pw, setPw] = useState({ value: "", done: "" });
   const [branches, setBranches] = useState([]);
   const [imp, setImp] = useState(null);       // { payload, saved, result, error }
   const [sw, setSw] = useState(null);         // switch-to-Cloud wizard: { step, branchId, backedUp, rows, match, limited, typed, error, progress }
@@ -42,6 +48,7 @@ export function CloudPanel({ showToast, fullState, onBackup }) {
     if (!isAdmin) return;
     try {
       setBranches(await cloud.list("branches", "id,name,code", (q) => q.is("archived_at", null).order("name")));
+      try { const sh = await cloud.list("shops", "code"); if (sh && sh[0]) { setShopCode(sh[0].code); const r = runtime(); if (r && r.ctx()) r.setCtx({ ...r.ctx(), shopCode: sh[0].code }); } } catch (e) {}
       setStaff(await cloud.list("memberships", "user_id,role,branch_id,active,profiles(display_name,username)", (q) => q.order("created_at")));
     } catch (e) { showToast(describeAuthError(e), "err"); }
   }, [isAdmin, showToast]);
@@ -80,6 +87,14 @@ export function CloudPanel({ showToast, fullState, onBackup }) {
     await loadStaff();
   }, m.active ? "Access removed." : "Access restored.");
 
+  const genPw = () => { const a = "abcdefghjkmnpqrstuvwxyz23456789"; let o = ""; const r = new Uint32Array(8); (window.crypto || {}).getRandomValues ? window.crypto.getRandomValues(r) : r.forEach((_, i) => (r[i] = Math.random() * 4e9)); r.forEach((v) => { o += a[v % a.length]; }); setPw({ value: o, done: "" }); };
+  const doReset = () => run(async () => {
+    await cloud.resetStaffPassword(member.user_id, pw.value);
+    setPw((x) => ({ ...x, done: x.value }));
+  }, "Password changed.");
+  const closeMember = () => { setMember(null); setPw({ value: "", done: "" }); };
+  const canReset = (m) => m && m.role !== "owner" && !(m.role === "admin" && me && me.role !== "owner") && m.user_id !== (me && me.user_id);
+
   const rt = runtime(); const inCloudMode = !!rt && rt.isCloud();
   const isAdminRole = (m) => m && (m.role === "owner" || m.role === "admin");
   const openSwitch = () => setSw({ step: "intro", branchId: me.branch_id || "", backedUp: false, rows: [], match: false, limited: false, typed: "", error: "", progress: "" });
@@ -107,15 +122,15 @@ export function CloudPanel({ showToast, fullState, onBackup }) {
       patch({ step: "failed", error: String(e.message).startsWith("verify_failed") ? "After copying, these totals did not match: " + String(e.message).split(":")[1] + "." : describeAuthError(e), restored: !!e.restored });
     }
   };
-  const restore = () => {
+  const restore = async () => {
     const n = rt ? rt.pendingCount() + rt.failedCount() : 0;
-    if (!window.confirm((n ? `${n} change(s) on this phone have not reached the cloud and will be lost. ` : "") + "Put back the records saved just before you switched, and return to Local mode?")) return;
+    if (!(await app.confirm({ title: "Restore the earlier records?", text: (n ? `${n} change(s) on this phone have not reached the cloud and will be lost. ` : "") + "Put back the records saved just before you switched, and return to Local mode?", okLabel: "Restore", danger: true }))) return;
     try { SW.restoreSnapshot(window.localStorage); window.location.reload(); } catch (e) { showToast("Could not restore: " + e.message, "err"); }
   };
-  const leave = () => {
+  const leave = async () => {
     const n = rt ? rt.pendingCount() + rt.failedCount() : 0;
     if (n) { showToast(`${n} change(s) have not reached the cloud yet. Open the sync status (top bar) to send or discard them first.`, "err", 4500); return; }
-    if (!window.confirm("Stop syncing and go back to Local mode? The records stay on this phone, but new sales will no longer reach the cloud or other phones.")) return;
+    if (!(await app.confirm({ title: "Go back to Local mode?", text: "Stop syncing. The records stay on this phone, but new sales will no longer reach the cloud or other phones.", okLabel: "Stop syncing", danger: true }))) return;
     SW.leaveCloud(window.localStorage); window.location.reload();
   };
 
@@ -131,6 +146,12 @@ export function CloudPanel({ showToast, fullState, onBackup }) {
             <div style={{ ...styles.emptyNote, paddingTop: 0 }}>
               Signed in as {me.display_name}. Your account and permissions are checked by the server. {inCloudMode ? "This phone is in Cloud mode: every change is saved here first and sent to the cloud when there is a connection." : "This phone is still in Local mode: all shop data stays on this phone until you choose to switch, so keep saving backups."}
             </div>
+            {isAdmin && shopCode ? (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: colors.surface2, borderRadius: 12, padding: "10px 12px", marginTop: 10 }}>
+                <div><div style={{ fontSize: 12, color: colors.inkSoft }}>Shop code (staff type this to sign in)</div><div className="num" style={{ fontSize: 20, fontWeight: 700, letterSpacing: 1 }}>{shopCode}</div></div>
+                <Button small variant="secondary" icon={Copy} onClick={() => { shareText(shopCode); showToast("Shop code copied."); }}>Copy</Button>
+              </div>
+            ) : null}
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
               {!inCloudMode ? <Button full icon={Cloud} onClick={openSwitch}>Switch this phone to Cloud mode</Button> : null}
               {inCloudMode ? <Button full variant="secondary" onClick={leave}>Leave Cloud mode (keep records on this phone)</Button> : null}
@@ -144,8 +165,8 @@ export function CloudPanel({ showToast, fullState, onBackup }) {
                   {staff.map((m) => (
                     <Row key={m.user_id} title={(m.profiles && m.profiles.display_name) || "—"}
                       sub={`${ROLE_LABEL[m.role]}${m.profiles && m.profiles.username ? " · " + m.profiles.username : ""}${m.active ? "" : " · disabled"}`}
-                      onClick={m.role === "owner" ? undefined : () => toggleActive(m)}
-                      value={m.role === "owner" ? "" : (m.active ? "Disable" : "Enable")} valueColor={m.active ? colors.red : colors.primary} />
+                      onClick={m.role === "owner" ? undefined : () => setMember(m)}
+                      value={m.role === "owner" ? "" : "Manage"} valueColor={colors.primary} />
                   ))}
                 </List>
               </div>
@@ -269,6 +290,30 @@ export function CloudPanel({ showToast, fullState, onBackup }) {
               <div className="sheet-actions"><Button onClick={() => window.location.reload()}>OK</Button></div>
             </div>
           )}
+        </Modal>
+      )}
+      {member && (
+        <Modal title={(member.profiles && member.profiles.display_name) || "Staff"} onClose={closeMember}>
+          <div style={styles.stack}>
+            <div style={{ fontSize: 13, color: colors.inkSoft }}>{ROLE_LABEL[member.role]}{member.profiles && member.profiles.username ? " · username " + member.profiles.username : ""}{shopCode ? " · shop code " + shopCode : ""}</div>
+            {pw.done ? (
+              <div style={{ background: colors.greenSoft, borderRadius: 12, padding: 12 }}>
+                <div style={{ fontWeight: 600, color: colors.green }}>New password set</div>
+                <div className="num" style={{ fontSize: 22, fontWeight: 700, margin: "6px 0" }}>{pw.done}</div>
+                <div style={{ fontSize: 12.5, color: colors.inkSoft }}>Give it to them now. It is not stored anywhere you can look it up later, and they should keep it private.</div>
+                <Button small variant="secondary" icon={Copy} style={{ marginTop: 8 }} onClick={() => { shareText(`Shop code: ${shopCode}\nUsername: ${(member.profiles || {}).username || ""}\nPassword: ${pw.done}`); }}>Share login details</Button>
+              </div>
+            ) : canReset(member) ? (
+              <>
+                <Field label="New password" hint="At least 8 characters. Passwords can never be viewed, only replaced."><input style={styles.input} autoCapitalize="none" autoCorrect="off" value={pw.value} onChange={(e) => setPw({ value: e.target.value, done: "" })} /></Field>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Button variant="secondary" onClick={genPw} style={{ flex: 1 }}>Make one for me</Button>
+                  <Button icon={KeyRound} loading={busy} disabled={pw.value.length < 8} onClick={doReset} style={{ flex: 1 }}>Reset password</Button>
+                </div>
+              </>
+            ) : null}
+            <Button variant={member.active ? "danger" : "secondary"} onClick={async () => { await toggleActive(member); closeMember(); }}>{member.active ? "Disable this login" : "Enable this login"}</Button>
+          </div>
         </Modal>
       )}
       {dialog === "staff" && (

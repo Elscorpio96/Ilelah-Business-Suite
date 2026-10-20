@@ -3,7 +3,7 @@ export const CURRENCY = "₦";
 
 export const FONT = "'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
 
-export const colors = {
+export const lightColors = {
   // surfaces
   bg: "#F5F7FA",
   surface: "#FFFFFF",
@@ -32,9 +32,21 @@ export const colors = {
   whatsapp: "#1FA855",
   whatsappSoft: "#E4F6EB",
 };
+const kebab = (k) => k.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());
+// Screens use `colors.x`; each is a CSS variable, so switching theme (light / dark / text size) needs no re-render logic.
+export const colors = Object.fromEntries(Object.keys(lightColors).map((k) => [k, k === "panel" ? "var(--surface)" : `var(--${kebab(k)})`]));
+export const darkColors = {
+  bg: "#0B1220", surface: "#131C2E", surface2: "#1B2740", panel: "#131C2E",
+  ink: "#EAF0F8", inkSoft: "#A3B0C4", inkFaint: "#6E7C93",
+  line: "#243049", lineStrong: "#33415C",
+  primary: "#2DD4BF", primaryDark: "#5EEAD4", primarySoft: "#10343A",
+  amber: "#F5A524", amberSoft: "#3A2A10", red: "#F87171", redSoft: "#3B1A1F", green: "#4ADE80", greenSoft: "#12321F", blue: "#60A5FA", blueSoft: "#162A4D",
+  whatsapp: "#34D27B", whatsappSoft: "#12321F",
+};
 // Backwards-compatible names used across the app.
 colors.teal = colors.primary;
 colors.tealSoft = colors.primarySoft;
+lightColors.teal = lightColors.primary; lightColors.tealSoft = lightColors.primarySoft;
 
 export const radius = { sm: 8, md: 12, lg: 16, xl: 24, pill: 999 };
 export const shadow = {

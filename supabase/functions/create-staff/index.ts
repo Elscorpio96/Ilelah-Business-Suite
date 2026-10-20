@@ -19,6 +19,17 @@ const deps: Deps = {
     if (error || !data.user) throw error ?? new Error("create failed");
     return { id: data.user.id };
   },
+  async getMember(shop, userId) {
+    const { data } = await admin.from("memberships").select("role, active").eq("shop_id", shop).eq("user_id", userId).maybeSingle();
+    return data ? { role: data.role, active: data.active } : null;
+  },
+  async setPassword(userId, password) {
+    const { error } = await admin.auth.admin.updateUserById(userId, { password });
+    if (error) throw error;
+  },
+  async auditReset(a) {
+    await admin.from("audit_log").insert({ shop_id: a.shop, actor_id: a.actor, action: "member.password_reset", entity: "member", entity_id: a.target, reason: "Password reset by owner/admin" });
+  },
   async deleteAuthUser(id) { await admin.auth.admin.deleteUser(id); },
   async addMember(a) {
     const { error } = await admin.rpc("add_member", { p_actor: a.actor, p_shop: a.shop, p_user: a.user, p_username: a.username, p_name: a.name, p_role: a.role, p_branch: a.branch });

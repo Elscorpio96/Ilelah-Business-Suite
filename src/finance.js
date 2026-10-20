@@ -1,6 +1,6 @@
 // Pure helpers: reports, end-of-day cash maths, debt reminders, quick-sale tiles, below-cost checks, Excel export.
 import * as XLSX from "xlsx";
-import { lineTotal, lineDiscount, saleDiscount } from "./lines.js";
+import { lineTotal, lineDiscount, saleDiscount, saleNet, saleNetCost, saleCollectedAtSale, saleCashBack, saleRefunded, saleReturns } from "./lines.js";
 
 const num = (v) => Number(v) || 0;
 const sum = (arr, f) => arr.reduce((a, x) => a + f(x), 0);
@@ -9,7 +9,8 @@ const round2 = (v) => Math.round((num(v) + Number.EPSILON) * 100) / 100;
 export const PAYMENT_LABELS = { cash: "Cash", credit: "On credit", transfer: "Bank transfer", pos: "POS" };
 export const payLabel = (t) => PAYMENT_LABELS[t] || (t ? t[0].toUpperCase() + t.slice(1) : "Other");
 // Money actually received at the till for a sale (credit sales: only the deposit).
-export const collected = (s) => num(s.total) - num(s.balanceDue);
+export const collected = (s) => saleCollectedAtSale(s);                // at the time of sale (day-close drawer maths)
+export const collectedNet = (s) => round2(saleCollectedAtSale(s) - saleCashBack(s));   // what the shop kept after cash returns
 
 // ---------- below cost ----------
 export const isBelowCost = (p) => num(p.cost) > 0 && num(p.price) > 0 && num(p.price) < num(p.cost);
@@ -24,6 +25,10 @@ export function byProduct(sales) {
     r.qty += num(i.qty); r.revenue += lineTotal(i); r.discount += lineDiscount(i); r.cost += num(i.qty) * num(i.cost);
     m.set(k, r);
   }
+  for (const s of sales) for (const ret of saleReturns(s)) for (const x of ret.items || []) {   // returned goods come off quantity and revenue
+    const r = m.get(x.productId || x.name); if (!r) continue;
+    r.qty -= num(x.qty); r.revenue -= num(x.amount); if (ret.restock) r.cost -= num(x.qty) * num(x.cost);
+  }
   return [...m.values()].map((r) => ({ ...r, profit: r.revenue - r.cost, margin: r.revenue ? ((r.revenue - r.cost) / r.revenue) * 100 : 0 }))
     .sort((a, b) => b.revenue - a.revenue);
 }
@@ -31,7 +36,7 @@ function groupBy(sales, keyFn, init) {
   const m = new Map();
   for (const s of sales) {
     const k = keyFn(s); const r = m.get(k) || { key: k, count: 0, revenue: 0, cost: 0, collected: 0, outstanding: 0, ...(init || {}) };
-    r.count++; r.revenue += num(s.total); r.discount = (r.discount || 0) + saleDiscount(s.items); r.cost += num(s.cost); r.collected += collected(s); r.outstanding += num(s.balanceDue);
+    r.count++; r.revenue += saleNet(s); r.refunded = (r.refunded || 0) + saleRefunded(s); r.discount = (r.discount || 0) + saleDiscount(s.items); r.cost += saleNetCost(s); r.collected += collectedNet(s); r.outstanding += num(s.balanceDue);
     m.set(k, r);
   }
   return [...m.values()].map((r) => ({ ...r, profit: r.revenue - r.cost }));
@@ -41,12 +46,12 @@ export const byPayment = (sales) => groupBy(sales, (s) => s.paymentType || "cash
 export const byDay = (sales) => groupBy(sales, (s) => s.date).sort((a, b) => (a.key < b.key ? -1 : 1));
 
 export function profitSummary(sales, expenses) {
-  const revenue = sum(sales, (s) => num(s.total)), cost = sum(sales, (s) => num(s.cost));
+  const revenue = sum(sales, saleNet), cost = sum(sales, saleNetCost);
   const expensesTotal = sum(expenses, (e) => num(e.amount));
   const gross = revenue - cost;
   const byCat = {};
   for (const e of expenses) byCat[e.category || "Other"] = (byCat[e.category || "Other"] || 0) + num(e.amount);
-  return { count: sales.length, discounts: sum(sales, (s) => saleDiscount(s.items)), revenue, cost, gross, margin: revenue ? (gross / revenue) * 100 : 0, expensesTotal,
+  return { count: sales.length, refunds: sum(sales, saleRefunded), discounts: sum(sales, (s) => saleDiscount(s.items)), revenue, cost, gross, margin: revenue ? (gross / revenue) * 100 : 0, expensesTotal,
     expenseCategories: Object.entries(byCat).sort((a, b) => b[1] - a[1]), net: gross - expensesTotal };
 }
 
@@ -60,13 +65,14 @@ export function dayClose({ sales, creditPayments, expenses, purchases = [], date
   const ex = expenses.filter((e) => e.date === date && e.branchId === branchId);
   const expensesTotal = sum(ex, (e) => num(e.amount));
   const purchasesTotal = sum(purchases.filter((p) => p.date === date && p.branchId === branchId), (p) => num(p.total));
-  const revenue = sum(ss, (s) => num(s.total)), cost = sum(ss, (s) => num(s.cost));
+  const revenue = sum(ss, saleNet), cost = sum(ss, saleNetCost);
+  const refundsPaid = round2(sum(sales.filter((x) => x.branchId === branchId), (x) => sum(saleReturns(x).filter((r) => r.date === date), (r) => num(r.cashBack))));
   const creditGiven = sum(ss.filter((s) => s.paymentType === "credit"), (s) => num(s.balanceDue));
-  const expected = round2(num(floatAmount) + cashSales + deposits + repayments - expensesTotal);
+  const expected = round2(num(floatAmount) + cashSales + deposits + repayments - expensesTotal - refundsPaid);
   const hasCount = counted !== null && counted !== "" && !isNaN(Number(counted));
   const difference = hasCount ? round2(Number(counted) - expected) : null;
   return { salesCount: ss.length, revenue, cost, gross: revenue - cost, expensesTotal, net: revenue - cost - expensesTotal,
-    cashSales, deposits, otherMethods, repayments, creditGiven, purchasesTotal, expected, difference,
+    cashSales, deposits, otherMethods, repayments, refundsPaid, creditGiven, purchasesTotal, expected, difference,
     topItems: byProduct(ss).slice(0, 5), cashiers: byCashier(ss), expenseList: ex };
 }
 
@@ -85,6 +91,7 @@ export function dayCloseText({ shopName, branchName, date, d, floatAmount, count
   if (d.deposits) L.push(`+ Credit deposits: ${money(d.deposits)}`);
   if (d.repayments) L.push(`+ Credit repayments: ${money(d.repayments)}`);
   if (d.expensesTotal) L.push(`- Expenses paid: ${money(d.expensesTotal)}`);
+  if (d.refundsPaid) L.push(`- Refunds paid out: ${money(d.refundsPaid)}`);
   L.push(`= Expected cash: ${money(d.expected)}`);
   if (d.difference !== null) {
     L.push(`Counted cash: ${money(counted)}`);
@@ -136,14 +143,14 @@ export function buildReportWorkbook({ shopName, rangeLabel, branchLabel, sales, 
   const ps = profitSummary(sales, expenses);
   add("Summary", [
     [shopName || "Ilelah Business Suite", ""], ["Report period", rangeLabel], ["Branch", branchLabel], [],
-    ["Sales (count)", ps.count], ["Discounts given", round2(ps.discounts)], ["Revenue (after discounts)", round2(ps.revenue)], ["Cost of goods", round2(ps.cost)],
+    ["Sales (count)", ps.count], ["Discounts given", round2(ps.discounts)], ["Refunds / returns", round2(ps.refunds)], ["Revenue (after discounts and returns)", round2(ps.revenue)], ["Cost of goods", round2(ps.cost)],
     ["Gross profit", round2(ps.gross)], ["Gross margin %", round2(ps.margin)], ["Expenses", round2(ps.expensesTotal)], ["Net profit", round2(ps.net)],
     [], ["Expenses by category", ""], ...ps.expenseCategories.map(([c, v]) => [c, round2(v)]),
   ], [26, 24]);
-  add("Sales", [["Invoice", "Date", "Branch", "Customer", "Cashier", "Payment", "Discount", "Total", "Paid at sale", "Balance due", "Cost", "Profit"],
+  add("Sales", [["Invoice", "Date", "Branch", "Customer", "Cashier", "Payment", "Discount", "Total", "Refunded", "Paid at sale", "Balance due", "Cost", "Profit"],
     ...[...sales].sort((a, b) => (a.time < b.time ? -1 : 1)).map((s) => [s.invoiceNo, s.date, s.branchName || s.branchId || "", s.customerName || "Walk-in", s.cashierName || "", payLabel(s.paymentType),
-      round2(saleDiscount(s.items)), round2(s.total), round2(collected(s)), round2(s.balanceDue), round2(s.cost), round2(num(s.total) - num(s.cost))])],
-    [9, 12, 16, 22, 16, 12, 12, 12, 12, 12, 12, 12]);
+      round2(saleDiscount(s.items)), round2(s.total), round2(saleRefunded(s)), round2(collectedNet(s)), round2(s.balanceDue), round2(saleNetCost(s)), round2(saleNet(s) - saleNetCost(s))])],
+    [9, 12, 16, 22, 16, 12, 12, 12, 12, 12, 12, 12, 12]);
   const itemRows = [];
   for (const s of sales) for (const i of s.items || []) itemRows.push([s.invoiceNo, s.date, i.name, num(i.qty), round2(i.price), round2(lineDiscount(i)), round2(i.cost), round2(lineTotal(i)), round2(lineTotal(i) - num(i.qty) * num(i.cost))]);
   add("Items sold", [["Invoice", "Date", "Product", "Qty", "Unit price", "Discount", "Unit cost", "Line total", "Line profit"], ...itemRows], [9, 12, 30, 8, 12, 12, 12, 12, 12]);

@@ -43,6 +43,11 @@ export const cloud = {
     if (error) { let msg = error.message; try { const j = await error.context.json(); msg = j.error || msg; } catch (_) {} throw new Error(msg); }
     return data;
   },
+  async resetStaffPassword(userId, password) {
+    const { data, error } = await c().functions.invoke("create-staff", { body: { action: "reset_password", user_id: userId, password } });
+    if (error) { let msg = error.message; try { const j = await error.context.json(); msg = j.error || msg; } catch (_) {} throw new Error(msg); }
+    return data;
+  },
   // simple reads (RLS filters everything to the caller's shop)
   async list(table, columns = "*", build) {
     let q = c().from(table).select(columns);

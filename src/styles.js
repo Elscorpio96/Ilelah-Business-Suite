@@ -1,19 +1,26 @@
 // Global CSS + shared inline style objects (themed from ./theme.js).
-import { colors, shadow, FONT } from "./theme.js";
+import { colors, lightColors, darkColors, shadow, FONT } from "./theme.js";
+const kebab = (k) => k.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());
+const varsOf = (pal) => Object.entries(pal).filter(([k]) => !["panel", "teal", "tealSoft"].includes(k)).map(([k, v]) => `--${kebab(k)}: ${v};`).join(" ");
+const DARK_EXTRA = "--on-primary: #04201C; --shadow-sm: 0 1px 2px rgba(0,0,0,0.4); --shadow-md: 0 1px 3px rgba(0,0,0,0.45), 0 4px 14px rgba(0,0,0,0.35); --shadow-lg: 0 18px 44px rgba(0,0,0,0.6);";
 
 export const globalCss = `
   :root {
-    --bg: ${colors.bg}; --surface: ${colors.surface}; --surface2: ${colors.surface2};
-    --ink: ${colors.ink}; --ink-soft: ${colors.inkSoft}; --ink-faint: ${colors.inkFaint};
-    --line: ${colors.line}; --line-strong: ${colors.lineStrong};
-    --primary: ${colors.primary}; --primary-dark: ${colors.primaryDark}; --primary-soft: ${colors.primarySoft};
-    --red: ${colors.red}; --red-soft: ${colors.redSoft}; --amber: ${colors.amber}; --amber-soft: ${colors.amberSoft};
-    --green: ${colors.green}; --green-soft: ${colors.greenSoft}; --blue: ${colors.blue}; --blue-soft: ${colors.blueSoft};
+    --bg: ${lightColors.bg}; --surface: ${lightColors.surface}; --surface2: ${lightColors.surface2};
+    --ink: ${lightColors.ink}; --ink-soft: ${lightColors.inkSoft}; --ink-faint: ${lightColors.inkFaint};
+    --line: ${lightColors.line}; --line-strong: ${lightColors.lineStrong};
+    --primary: ${lightColors.primary}; --primary-dark: ${lightColors.primaryDark}; --primary-soft: ${lightColors.primarySoft};
+    --red: ${lightColors.red}; --red-soft: ${lightColors.redSoft}; --amber: ${lightColors.amber}; --amber-soft: ${lightColors.amberSoft};
+    --green: ${lightColors.green}; --green-soft: ${lightColors.greenSoft}; --blue: ${lightColors.blue}; --blue-soft: ${lightColors.blueSoft}; --whatsapp: ${lightColors.whatsapp}; --whatsapp-soft: ${lightColors.whatsappSoft};;
     --shadow-sm: ${shadow.sm}; --shadow-md: ${shadow.md}; --shadow-lg: ${shadow.lg};
     --sat: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
     --sab: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
     --nav-h: 70px;
+    --on-primary: #FFFFFF;
   }
+  html[data-theme="dark"] { color-scheme: dark; ${varsOf(darkColors)} ${DARK_EXTRA} }
+  @media (prefers-color-scheme: dark) { html[data-theme="system"] { color-scheme: dark; ${varsOf(darkColors)} ${DARK_EXTRA} } }
+  .force-light { ${varsOf(lightColors)} --on-primary: #FFFFFF; color: var(--ink); }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   html, body { margin: 0; background: var(--bg); color: var(--ink); -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
@@ -24,9 +31,10 @@ export const globalCss = `
   button:disabled { opacity: .5; cursor: not-allowed; }
   button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
   input, select, textarea { font-family: inherit; color: var(--ink); }
+  input:not([type=checkbox]):not([type=radio]):not([type=range]), textarea { background-color: var(--surface); }
   input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary) !important; box-shadow: 0 0 0 3px rgba(15,118,110,0.16); }
   ::placeholder { color: var(--ink-faint); }
-  select { appearance: none; -webkit-appearance: none; background-color: #fff; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235B6678' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>"); background-repeat: no-repeat; background-position: right 12px center; background-size: 16px; padding-right: 36px !important; }
+  select { appearance: none; -webkit-appearance: none; background-color: var(--surface); background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235B6678' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>"); background-repeat: no-repeat; background-position: right 12px center; background-size: 16px; padding-right: 36px !important; }
   textarea { resize: vertical; }
   input[type=number] { -moz-appearance: textfield; }
   .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
@@ -38,7 +46,7 @@ export const globalCss = `
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 
   /* ---------- app bar ---------- */
-  .appbar { position: sticky; top: 0; z-index: 20; background: rgba(255,255,255,0.94); -webkit-backdrop-filter: saturate(1.4) blur(10px); backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--line); padding: calc(var(--sat) + 10px) 16px 10px; display: flex; align-items: center; gap: 12px; }
+  .appbar { position: sticky; top: 0; z-index: 20; background: var(--surface); background: color-mix(in srgb, var(--surface) 94%, transparent); -webkit-backdrop-filter: saturate(1.4) blur(10px); backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--line); padding: calc(var(--sat) + 10px) 16px 10px; display: flex; align-items: center; gap: 12px; }
   .appbar-brand { display: none; align-items: center; gap: 10px; flex-shrink: 0; }
   .appbar-titles { flex: 1; min-width: 0; }
   .appbar-title { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -65,7 +73,7 @@ export const globalCss = `
   .icon-btn-danger { background: var(--red-soft); color: var(--red); }
 
   /* ---------- toast ---------- */
-  .toast { position: fixed; left: 50%; bottom: calc(var(--sab) + 24px); transform: translateX(-50%); z-index: 80; width: max-content; max-width: min(92vw, 440px); background: #0F172A; color: #fff; padding: 12px 16px; border-radius: 14px; display: flex; align-items: flex-start; gap: 10px; font-size: 14px; font-weight: 500; line-height: 1.35; box-shadow: var(--shadow-lg); animation: toastIn .24s cubic-bezier(.2,.8,.2,1); }
+  .toast { position: fixed; left: 50%; bottom: calc(var(--sab) + 24px); transform: translateX(-50%); z-index: 80; width: max-content; max-width: min(92vw, 440px); background: #0F172A; color: #fff; border: 1px solid rgba(255,255,255,0.12); padding: 12px 16px; border-radius: 14px; display: flex; align-items: flex-start; gap: 10px; font-size: 14px; font-weight: 500; line-height: 1.35; box-shadow: var(--shadow-lg); animation: toastIn .24s cubic-bezier(.2,.8,.2,1); }
   .toast-ic { flex-shrink: 0; margin-top: 1px; }
   .toast-ok .toast-ic { color: #4ADE80; } .toast-err .toast-ic { color: #FCA5A5; }
 
@@ -95,7 +103,7 @@ export const globalCss = `
   .chips { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 4px; scrollbar-width: none; margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
   .chips::-webkit-scrollbar { display: none; }
   .chip { flex-shrink: 0; height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-soft); font-size: 13.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
-  .chip.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .chip.on { background: var(--ink); border-color: var(--ink); color: var(--bg); }
   .seg { display: flex; background: var(--surface2); border-radius: 12px; padding: 4px; gap: 4px; }
   .seg button { flex: 1; border: none; background: transparent; border-radius: 9px; padding: 9px 10px; font-size: 13.5px; font-weight: 600; color: var(--ink-soft); white-space: nowrap; }
   .seg button.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); }
@@ -109,18 +117,18 @@ export const globalCss = `
   .switch { appearance: none; -webkit-appearance: none; width: 48px; height: 28px; border-radius: 14px; background: var(--line-strong); position: relative; flex-shrink: 0; transition: background-color .2s; border: none; outline: none; margin: 0; cursor: pointer; }
   .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .2s; }
   .switch:checked { background: var(--primary); } .switch:checked::after { transform: translateX(20px); }
-  .input-row { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line-strong); border-radius: 12px; padding: 0 14px; height: 48px; background: #fff; color: var(--ink-soft); transition: border-color .15s, box-shadow .15s; }
+  .input-row { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line-strong); border-radius: 12px; padding: 0 14px; height: 48px; background: var(--surface); color: var(--ink-soft); transition: border-color .15s, box-shadow .15s; }
   .input-row:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(15,118,110,0.16); }
   .input-row input { border: none !important; outline: none; box-shadow: none !important; flex: 1; min-width: 0; height: 100%; background: transparent; font-size: 15px; padding: 0 !important; }
 
   /* ---------- More sheet ---------- */
   .more-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding-bottom: 8px; }
   .more-item { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 6px 12px; border-radius: 16px; background: var(--surface2); border: none; font-size: 13px; font-weight: 600; color: var(--ink); }
-  .more-item .mi-ic { width: 46px; height: 46px; border-radius: 14px; background: #fff; display: flex; align-items: center; justify-content: center; color: var(--primary); box-shadow: var(--shadow-sm); }
+  .more-item .mi-ic { width: 46px; height: 46px; border-radius: 14px; background: var(--surface); display: flex; align-items: center; justify-content: center; color: var(--primary); box-shadow: var(--shadow-sm); }
   .more-active { background: var(--primary-soft); color: var(--primary); }
 
   /* ---------- dashboard ---------- */
-  .hero { background: var(--primary); color: #fff; border-radius: 22px; padding: 20px 20px 18px; position: relative; overflow: hidden; box-shadow: 0 8px 22px rgba(15,118,110,0.28); }
+  .hero { background: var(--primary); color: var(--on-primary); border-radius: 22px; padding: 20px 20px 18px; position: relative; overflow: hidden; box-shadow: 0 8px 22px rgba(15,118,110,0.28); }
   .hero::before { content: ""; position: absolute; right: -50px; top: -60px; width: 190px; height: 190px; border-radius: 50%; background: rgba(255,255,255,0.09); }
   .hero::after { content: ""; position: absolute; right: 40px; bottom: -70px; width: 130px; height: 130px; border-radius: 50%; background: rgba(255,255,255,0.06); }
   .hero > * { position: relative; z-index: 1; }
@@ -192,7 +200,7 @@ export const globalCss = `
     .co-cart.open { transform: translateY(0); visibility: visible; transition: transform .3s cubic-bezier(.2,.8,.2,1); }
     .co-cart-close { display: inline-flex; }
     .co-backdrop { position: fixed; inset: 0; z-index: 44; background: rgba(15,23,42,0.5); animation: fadeIn .18s ease; }
-    .cart-bar { display: flex; position: fixed; left: 12px; right: 12px; bottom: calc(var(--nav-h) + var(--sab) + 10px); z-index: 25; background: var(--ink); color: #fff; border: none; border-radius: 18px; padding: 10px 14px 10px 10px; align-items: center; justify-content: space-between; gap: 10px; box-shadow: var(--shadow-lg); animation: rise .2s ease; }
+    .cart-bar { display: flex; position: fixed; left: 12px; right: 12px; bottom: calc(var(--nav-h) + var(--sab) + 10px); z-index: 25; background: var(--ink); color: var(--bg); border: none; border-radius: 18px; padding: 10px 14px 10px 10px; align-items: center; justify-content: space-between; gap: 10px; box-shadow: var(--shadow-lg); animation: rise .2s ease; }
     .cart-bar-count { width: 38px; height: 38px; border-radius: 12px; background: var(--primary); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; flex-shrink: 0; }
     body.kbd .cart-bar { bottom: 12px; }
     .co { padding-bottom: 76px; }
@@ -229,7 +237,7 @@ export const styles = {
 
   // ----- brand
   brand: { display: "flex", alignItems: "center", gap: 10 },
-  brandMark: { width: 44, height: 44, borderRadius: 14, background: C.primary, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 22, letterSpacing: "-0.03em", flexShrink: 0 },
+  brandMark: { width: 44, height: 44, borderRadius: 14, background: "#081A42", objectFit: "cover", display: "block", flexShrink: 0 },
   brandName: { fontWeight: 700, fontSize: 18, lineHeight: 1.15, letterSpacing: "-0.02em" },
   brandSub: { fontSize: 12.5, color: C.inkSoft, marginTop: 2 },
 
@@ -265,8 +273,8 @@ export const styles = {
   searchInput: { border: "none", outline: "none", flex: 1, fontSize: 15, background: "transparent", minWidth: 0, height: "100%" },
   scanBox: { display: "flex", alignItems: "center", gap: 10, background: C.surface, borderRadius: 14, padding: "0 6px 0 14px", height: 52, flexShrink: 0, position: "relative", boxShadow: ring, color: C.inkSoft },
   camBtn: { background: C.primarySoft, color: C.primary, border: "none", borderRadius: 11, width: 40, height: 40, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
-  scanCamBtn: { display: "inline-flex", alignItems: "center", gap: 6, background: C.primary, color: "#fff", border: "none", borderRadius: 11, height: 40, padding: "0 14px", fontWeight: 600, fontSize: 14, whiteSpace: "nowrap", flexShrink: 0 },
-  tileBadge: { position: "absolute", top: 8, right: 8, background: C.primary, color: "#fff", borderRadius: 10, fontSize: 11.5, fontWeight: 700, padding: "1px 8px" },
+  scanCamBtn: { display: "inline-flex", alignItems: "center", gap: 6, background: C.primary, color: "var(--on-primary)", border: "none", borderRadius: 11, height: 40, padding: "0 14px", fontWeight: 600, fontSize: 14, whiteSpace: "nowrap", flexShrink: 0 },
+  tileBadge: { position: "absolute", top: 8, right: 8, background: C.primary, color: "var(--on-primary)", borderRadius: 10, fontSize: 11.5, fontWeight: 700, padding: "1px 8px" },
   warnNote: { background: C.redSoft, color: C.red, borderRadius: 12, padding: "10px 12px", fontSize: 13.5, fontWeight: 500, lineHeight: 1.45 },
   changeDue: { background: C.greenSoft, color: C.green, borderRadius: 12, padding: "10px 12px", fontSize: 14, fontWeight: 600 },
   waBtn: { background: C.whatsappSoft, color: C.whatsapp, border: "none", borderRadius: 12, width: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
@@ -277,7 +285,7 @@ export const styles = {
   scanFlash: { display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, fontWeight: 600, color: C.primary, whiteSpace: "nowrap" },
 
   // ----- buttons
-  primaryBtn: { ...btnBase, background: C.primary, color: "#fff", boxShadow: "0 1px 2px rgba(15,118,110,0.35)" },
+  primaryBtn: { ...btnBase, background: C.primary, color: "var(--on-primary)", boxShadow: "0 1px 2px rgba(15,118,110,0.35)" },
   dangerBtn: { ...btnBase, background: C.red, color: "#fff" },
   ghostBtn: { ...btnBase, background: C.surface, color: C.ink, boxShadow: `inset 0 0 0 1px ${C.lineStrong}` },
   iconBtn: { background: C.surface2, border: "none", borderRadius: 10, width: 36, height: 36, display: "inline-flex", alignItems: "center", justifyContent: "center", color: C.ink, flexShrink: 0 },
@@ -292,7 +300,7 @@ export const styles = {
   formGrid2: { display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 12 },
   field: { display: "flex", flexDirection: "column", gap: 6 },
   fieldLabel: { fontSize: 13, fontWeight: 600, color: C.inkSoft },
-  input: { border: `1px solid ${C.lineStrong}`, borderRadius: 12, padding: "0 14px", fontSize: 15, width: "100%", height: 46, background: "#fff", minWidth: 0 },
+  input: { border: `1px solid ${C.lineStrong}`, borderRadius: 12, padding: "0 14px", fontSize: 15, width: "100%", height: 46, background: C.surface, minWidth: 0 },
 
   modalOverlay: {}, modal: {}, modalHead: {}, modalTitle: {},
   modalActions: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8, flexWrap: "wrap" },
@@ -314,7 +322,7 @@ export const styles = {
   removeLink: { background: "none", border: "none", color: C.inkSoft, fontSize: 12.5, textDecoration: "underline", padding: "4px 0" },
   receiptTotalRow: { display: "flex", justifyContent: "space-between", fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em" },
   receiptSubRow: { display: "flex", justifyContent: "space-between", fontSize: 13, color: C.inkSoft, marginTop: 6 },
-  checkoutBtn: { ...btnBase, width: "100%", height: 52, marginTop: 16, background: C.primary, color: "#fff", fontSize: 16, fontWeight: 700, borderRadius: 14, boxShadow: "0 2px 6px rgba(15,118,110,0.35)" },
+  checkoutBtn: { ...btnBase, width: "100%", height: 52, marginTop: 16, background: C.primary, color: "var(--on-primary)", fontSize: 16, fontWeight: 700, borderRadius: 14, boxShadow: "0 2px 6px rgba(15,118,110,0.35)" },
   checkoutFields: { display: "flex", flexDirection: "column", gap: 10, marginTop: 12 },
   paymentToggleRow: { display: "flex", gap: 4, marginTop: 14, background: C.surface2, borderRadius: 12, padding: 4 },
   paymentToggleBtn: { flex: 1, height: 40, borderRadius: 9, border: "none", background: "transparent", fontWeight: 600, fontSize: 14, color: C.inkSoft },
@@ -322,19 +330,19 @@ export const styles = {
   paymentToggleBtnActiveCredit: { background: C.surface, color: C.red, boxShadow: shadow.sm },
 
   // ----- invoice (on-screen copy of the printed receipt)
-  receiptPrintArea: { background: "#fff", border: `1px dashed ${C.lineStrong}`, borderRadius: 12, padding: "20px 18px", marginBottom: 4 },
+  receiptPrintArea: { background: "#fff", color: "#0F172A", border: `1px dashed ${C.lineStrong}`, borderRadius: 12, padding: "16px 14px", marginBottom: 4 },
   creditPrintArea: { borderColor: C.red },
-  receiptMeta: { fontSize: 12.5, color: C.inkSoft, display: "flex", flexDirection: "column", gap: 3 },
-  receiptFooter: { textAlign: "center", fontSize: 12, color: C.inkSoft, marginTop: 12 },
-  invoiceShopName: { fontWeight: 700, fontSize: 17, textAlign: "center", letterSpacing: "-0.01em" },
-  invoiceTagline: { fontSize: 12, color: C.inkSoft, textAlign: "center" },
-  invoiceBranchLine: { fontSize: 12.5, fontWeight: 600, color: C.primary, textAlign: "center", marginTop: 2 },
-  invoiceMetaLine: { fontSize: 12, color: C.inkSoft, textAlign: "center" },
-  invoiceLabel: { fontWeight: 700, fontSize: 12, letterSpacing: 1.2, textAlign: "center", marginBottom: 10, marginTop: 6 },
-  invoiceTableHead: { display: "flex", fontSize: 11.5, fontWeight: 600, color: C.inkSoft, borderBottom: `1px solid ${C.line}`, paddingBottom: 6, marginBottom: 6 },
-  invoiceTableRow: { display: "flex", flexWrap: "wrap", fontSize: 13, padding: "5px 0" },
-  signatureRow: { display: "flex", justifyContent: "space-between", fontSize: 12, color: C.inkSoft, marginTop: 12 },
-  receiptPrintedOn: { fontSize: 11, color: C.inkFaint, textAlign: "center", marginTop: 10 },
+  receiptMeta: { fontSize: 11.5, color: C.inkSoft, display: "flex", flexDirection: "column", gap: 3 },
+  receiptFooter: { textAlign: "center", fontSize: 10.5, color: C.inkSoft, marginTop: 12 },
+  invoiceShopName: { fontWeight: 700, fontSize: 15, textAlign: "center", letterSpacing: "-0.01em" },
+  invoiceTagline: { fontSize: 10.5, color: C.inkSoft, textAlign: "center" },
+  invoiceBranchLine: { fontSize: 11.5, fontWeight: 600, color: C.primary, textAlign: "center", marginTop: 2 },
+  invoiceMetaLine: { fontSize: 10.5, color: C.inkSoft, textAlign: "center" },
+  invoiceLabel: { fontWeight: 700, fontSize: 11, letterSpacing: 1.2, textAlign: "center", marginBottom: 10, marginTop: 6 },
+  invoiceTableHead: { display: "flex", fontSize: 10, fontWeight: 600, color: C.inkSoft, borderBottom: `1px solid ${C.line}`, paddingBottom: 6, marginBottom: 6 },
+  invoiceTableRow: { display: "flex", flexWrap: "wrap", fontSize: 11.5, padding: "3px 0" },
+  signatureRow: { display: "flex", justifyContent: "space-between", fontSize: 10.5, color: C.inkSoft, marginTop: 12 },
+  receiptPrintedOn: { fontSize: 10, color: C.inkFaint, textAlign: "center", marginTop: 10 },
 
   // ----- purchases / expenses / team / credit (legacy rows)
   poCard: { borderRadius: 14, padding: 14, boxShadow: ring, background: C.surface },
