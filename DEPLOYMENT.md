@@ -162,3 +162,11 @@ The same app, in a Windows 10/11 desktop shell (Electron). One program contains 
 * **Stock:** a deleted item goes back on the shelf, an added item comes off it (Local mode refuses an added quantity above what is in stock).
 * **Money:** the screen shows the difference before saving. Cash sale: "customer must pay ₦X more" or "give the customer back ₦X". Credit sale: the amount owed goes up or down by the difference. The receipt shows an **Edited** badge.
 * **Cloud mode:** run `supabase/migrations/0011_revise_sale_lines.sql` once in the SQL Editor (after 0010) **before** installing the new app on phones. Every change is written to the stock ledger and the audit log. Only an owner/admin login is accepted by the server.
+
+## 18. Backup: "Save backup to this phone" (Android) 
+* Settings → Backup now has **Save backup to this phone**, which opens Android's own file picker so the shop chooses the folder (Downloads, Documents, SD card) and the name. No permission is needed. **Share backup** (WhatsApp, Drive, e-mail) is still there as the second button. On a PC it is a normal download.
+* The "Switch to Cloud mode" step 1 also uses the file picker. It only counts as backed up once the file was actually saved.
+* New native file: `android/app/src/main/java/com/tally/shopledger/TallyFilesPlugin.java` (registered in MainActivity). It could not be compiled on the machine that wrote it: if the Android build fails, the red lines will be in that file.
+
+## 19. Signing key (read this)
+Phones only accept an in-place update when the APK is signed with the SAME key as the installed app. The key lives in the four GitHub secrets (KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD). Keep the original `.jks` file and passwords in at least two safe places.
