@@ -8,7 +8,7 @@ import { printerAvailable, listPairedDevices, bluetoothStatus, openBluetoothSett
 import { getPrinter, setPrinter, printBytes, buildSale, buildPayment, buildText, buildTest } from "./printer.js";
 import { TEMPLATE_CSV, readFileToRows, buildPlan, applyPlan, inventoryToCsv, parseDelimited } from "./bulk.js";
 import { renderReceiptPng } from "./receipt-image.js";
-import { repriceSale } from "./saleedit.js";
+import { repriceSale, reviseSale, stockDiffs } from "./saleedit.js";
 import { getUi, setUi, applyUi, THEMES, TEXT_SIZES } from "./appearance.js";
 import { LOGO_MARK } from "./logo.js";
 import { hasPin, setPin, clearPin, isLockedFlag, setLockedFlag } from "./security.js";
@@ -434,10 +434,16 @@ function App({ license }) {
     if (Object.values(diffs).every((d) => !d)) return;
     setProducts((prev) => prev.map((p) => (diffs[p.id] ? { ...p, stock: { ...p.stock, [oldSale.branchId]: Math.round((getStock(p, oldSale.branchId) + diffs[p.id]) * 1000) / 1000 } } : p)), "server-stock");
   };
+  // After a sale's lines are changed (quantity, item added, item deleted): stock follows, by product.
+  const applyLineChanges = (oldSale, newSale) => {
+    const diffs = stockDiffs(oldSale, newSale);
+    if (!Object.keys(diffs).length) return;
+    setProducts((prev) => prev.map((p) => (diffs[p.id] ? { ...p, stock: { ...p.stock, [oldSale.branchId]: Math.round((getStock(p, oldSale.branchId) + diffs[p.id]) * 1000) / 1000 } } : p)), "server-stock");
+  };
   // Returns: the owner does them. In Local mode a cashier can too, once the owner types their PIN. In Cloud mode the server only accepts the owner.
   const canReturn = (sale) => !!sale && (sale.items || []).some((i) => returnableQty(sale, i) > 0) && (isAdmin || (!cloudOn && admins.some((a) => hasPin(a.id))));
   const needsOwner = !isAdmin;
-  const ctxValue = { confirm: askConfirm, askOwner: () => (needsOwner ? askOwnerRaw() : Promise.resolve(true)), doReturn, canReturn, applyQtyEdit, products, ui: uiPrefs, changeUi, lockNow, cloudOn, switchUser, users, currentUser, showToast,
+  const ctxValue = { confirm: askConfirm, askOwner: () => (needsOwner ? askOwnerRaw() : Promise.resolve(true)), doReturn, canReturn, applyQtyEdit, applyLineChanges, products, ui: uiPrefs, changeUi, lockNow, cloudOn, switchUser, users, currentUser, showToast,
     pinSet: hasPin(currentUser.id), setMyPin: async (pin) => { await setPin(currentUser.id, pin); setUiPrefs(getUi()); }, clearMyPin: () => { clearPin(currentUser.id); changeUi({ autoLock: 0 }); } };
 
   return (
@@ -802,6 +808,25 @@ function TopBar({ tab, setTab, lowStockCount, currentUser, onLogout, isAdmin, br
     return () => { document.removeEventListener("focusin", update); document.removeEventListener("focusout", onOut); document.body.classList.remove("kbd"); };
   }, []);
 
+  // ---- keyboard shortcuts (PC) ----
+  const [keysOpen, setKeysOpen] = useState(false);
+  const itemsRef = useRef(items); itemsRef.current = items;
+  useEffect(() => {
+    const inField = (el) => el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable);
+    const focusSearch = () => { setTimeout(() => { const el = document.querySelector('main input[type="search"], main input[placeholder*="earch"], main input[placeholder*="can"]'); if (el) { el.focus(); el.select && el.select(); } }, 80); };
+    const onKey = (e) => {
+      if (document.querySelector(".sheet-overlay, .lock-screen")) { if (e.key === "?" && !inField(e.target)) setKeysOpen(false); return; }
+      const list = itemsRef.current;
+      if (e.altKey && !e.ctrlKey && !e.metaKey && /^[1-9]$/.test(e.key)) { const it = list[Number(e.key) - 1]; if (it) { e.preventDefault(); setTab(it.id); } return; }
+      if (e.key === "F1" || (e.key === "?" && !inField(e.target))) { e.preventDefault(); setKeysOpen(true); return; }
+      if (e.key === "F2" || (e.ctrlKey && (e.key === "n" || e.key === "N"))) { e.preventDefault(); const co = list.find((i) => i.id === "checkout"); if (co) { setTab("checkout"); focusSearch(); } return; }
+      if ((e.ctrlKey && (e.key === "k" || e.key === "K" || e.key === "f" || e.key === "F")) || (e.key === "/" && !inField(e.target))) { e.preventDefault(); focusSearch(); return; }
+      if (e.key === "F9" || (e.ctrlKey && e.key === "Enter")) { const b = [...document.querySelectorAll("main button")].find((x) => /^(Complete sale|Record credit sale)/.test(x.textContent.trim()) && !x.disabled); if (b) { e.preventDefault(); b.click(); } return; }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setTab]);
+
   return (
     <>
       <header className="appbar">
@@ -814,12 +839,13 @@ function TopBar({ tab, setTab, lowStockCount, currentUser, onLogout, isAdmin, br
           {sub ? <div className="appbar-sub">{sub}</div> : null}
         </div>
         <nav className="tb-nav" aria-label="Sections">
-          {items.map((it) => {
+          {items.map((it, ix) => {
             const Icon = it.icon;
             return (
-              <button key={it.id} className={"tn-btn" + (tab === it.id ? " tn-active" : "")} onClick={() => setTab(it.id)}>
-                <Icon size={17} strokeWidth={2.1} />{it.label}
+              <button key={it.id} className={"tn-btn" + (tab === it.id ? " tn-active" : "")} onClick={() => setTab(it.id)} aria-current={tab === it.id ? "page" : undefined} title={ix < 9 ? `Alt+${ix + 1}` : undefined}>
+                <Icon size={19} strokeWidth={2.1} />{it.label}
                 {!!it.badge && <span className="tn-badge">{it.badge}</span>}
+                {ix < 9 && <kbd className="tn-key">Alt+{ix + 1}</kbd>}
               </button>
             );
           })}
@@ -838,7 +864,25 @@ function TopBar({ tab, setTab, lowStockCount, currentUser, onLogout, isAdmin, br
             {(currentUser.name || "?").trim().charAt(0).toUpperCase()}
           </button>
         </div>
+        <div className="side-foot">
+          <button type="button" onClick={() => setKeysOpen(true)}><Info size={17} /> Keyboard shortcuts<span style={{ marginLeft: "auto", opacity: .6 }}>F1</span></button>
+          <div className="ver">{LICENSE_CONFIG.productName} · v1.17 for Windows</div>
+        </div>
       </header>
+
+      {keysOpen && (
+        <Modal title="Keyboard shortcuts" onClose={() => setKeysOpen(false)}>
+          <div className="kbd-grid" style={{ paddingBottom: 18 }}>
+            <kbd>F2</kbd><span>New sale (jumps to Sell and the search box)</span>
+            <kbd>F9</kbd><span>Complete the sale (same as Ctrl+Enter)</span>
+            <kbd>Ctrl + K</kbd><span>Search (press / on any screen)</span>
+            <kbd>Alt + 1 … 9</kbd><span>Go to a section in the left menu</span>
+            <kbd>Enter</kbd><span>In the search box: add the scanned or matched item</span>
+            <kbd>Esc</kbd><span>Close a window</span>
+            <kbd>F1</kbd><span>Show this list (or press ?)</span>
+          </div>
+        </Modal>
+      )}
 
       <nav className="bottom-nav" aria-label="Main navigation">
         {primary.map((it) => {
@@ -1019,7 +1063,7 @@ function AdminDashboard({ products, sales, purchases, expenses, customers, credi
   const owingCount = new Set(sales.filter((s) => s.paymentType === "credit").map((s) => s.customerId)).size;
 
   return (
-    <div style={styles.stack}>
+    <div style={styles.stack} className="dash-root">
       {multiBranch && (
         <Chips value={branchFilter} onChange={setBranchFilter} options={[["all", "All branches"], ...branches.map((b) => [b.id, b.name])]} />
       )}
@@ -1312,7 +1356,7 @@ function Inventory({ products, setProducts, showToast, readOnly, activeBranchId,
             : <EmptyState icon={Search} title="No products match" text="Try a different search or filter." />}
         </div>
       ) : (
-        <List>
+        <List wide>
           {filtered.map((p) => {
             const stock = stockOf(p);
             const out = stock <= 0;
@@ -1599,22 +1643,39 @@ function ReceiptModal({ sale: saleProp, settings, branch, onClose, showToast, on
   const [imgBusy, setImgBusy] = useState(false);
   const [discDrafts, setDiscDrafts] = useState([]);
   const [qtyDrafts, setQtyDrafts] = useState([]);
-  const startEdit = () => { setQtyDrafts(sale.items.map((i) => String(i.qty))); setDrafts(sale.items.map((i) => String(i.price))); setDiscDrafts(sale.items.map((i) => (lineDiscount(i) ? String(lineDiscount(i)) : ""))); setEditing(true); };
+  const [gone, setGone] = useState([]);                 // lines the owner has marked for deletion
+  const [extra, setExtra] = useState([]);               // items the owner is adding: { productId, name, cost, listPrice, qty, price, disc }
+  const [addQ, setAddQ] = useState(""); const [addOpen, setAddOpen] = useState(false);
+  const canReshape = isAdminLike(ctx) && saleReturns(sale).length === 0 && !(saleRefunded(sale) > 0) && (sale.status || "completed") === "completed";
+  const startEdit = () => { setGone(sale.items.map(() => false)); setExtra([]); setAddQ(""); setAddOpen(false); setQtyDrafts(sale.items.map((i) => String(i.qty))); setDrafts(sale.items.map((i) => String(i.price))); setDiscDrafts(sale.items.map((i) => (lineDiscount(i) ? String(lineDiscount(i)) : ""))); setEditing(true); };
+  const keptIdx = sale.items.map((_, i) => i).filter((i) => !gone[i]);
   const saveEdit = () => {
-    if (drafts.some((d) => d === "" || !(Number(d) >= 0))) { showToast("Enter a valid price for every item.", "err"); return; }
-    if (qtyDrafts.some((q) => q === "" || !(Number(q) > 0))) { showToast("Quantity must be more than 0. To take an item off, use Return items.", "err"); return; }
-    if (discDrafts.some((d, i) => d !== "" && (!(Number(d) >= 0) || Number(d) > Number(drafts[i]) * Number(qtyDrafts[i])))) { showToast("A discount cannot be negative or more than the line.", "err"); return; }
+    if (keptIdx.some((i) => drafts[i] === "" || !(Number(drafts[i]) >= 0))) { showToast("Enter a valid price for every item.", "err"); return; }
+    if (keptIdx.some((i) => qtyDrafts[i] === "" || !(Number(qtyDrafts[i]) > 0))) { showToast("Quantity must be more than 0. To take an item off, use the bin button.", "err"); return; }
+    if (extra.some((e) => !(Number(e.qty) > 0) || e.price === "" || !(Number(e.price) >= 0))) { showToast("Enter a quantity and price for the item you added.", "err"); return; }
+    if (keptIdx.some((i) => discDrafts[i] !== "" && (!(Number(discDrafts[i]) >= 0) || Number(discDrafts[i]) > Number(drafts[i]) * Number(qtyDrafts[i]))) || extra.some((e) => e.disc !== "" && (!(Number(e.disc) >= 0) || Number(e.disc) > Number(e.price) * Number(e.qty)))) { showToast("A discount cannot be negative or more than the line.", "err"); return; }
+    if (keptIdx.length + extra.length === 0) { showToast("A receipt must keep at least one item. To cancel the whole sale use Return items.", "err"); return; }
+    const changedShape = keptIdx.length !== sale.items.length || extra.length > 0;
+    if (changedShape && !canReshape) { showToast("Only the owner can add or delete items, and not after a return.", "err"); return; }
+    const updated = reviseSale(sale, {
+      kept: keptIdx.map((i) => ({ index: i, qty: Number(qtyDrafts[i]), price: Number(drafts[i]), discount: Number(discDrafts[i]) || 0 })),
+      added: extra.map((e) => ({ productId: e.productId, name: e.name, qty: Number(e.qty), price: Number(e.price), discount: Number(e.disc) || 0, cost: e.cost, listPrice: e.listPrice })),
+    });
     if (!ctx.cloudOn) {
-      const short = sale.items.find((it, i) => { const p = (ctx.products || []).find((x) => x.id === it.productId); return p && Number(qtyDrafts[i]) - it.qty > getStock(p, sale.branchId); });
-      if (short) { showToast(`Not enough ${short.name} in stock for that quantity.`, "err"); return; }
+      const diffs = stockDiffs(sale, updated);
+      const short = Object.entries(diffs).find(([id, d]) => { const p = (ctx.products || []).find((x) => x.id === id); return d < 0 && p && -d > getStock(p, sale.branchId); });
+      if (short) { const p = (ctx.products || []).find((x) => x.id === short[0]); showToast(`Not enough ${p ? p.name : "stock"} in stock for that quantity.`, "err"); return; }
     }
-    const updated = repriceSale(sale, drafts.map(Number), discDrafts.map((d) => Number(d) || 0), qtyDrafts.map(Number));
-    if (ctx.applyQtyEdit) ctx.applyQtyEdit(sale, updated);
+    if (ctx.applyLineChanges) ctx.applyLineChanges(sale, updated);
     onEdit(updated);
     setEditing(false);
-    showToast("Receipt updated.");
+    showToast(changedShape ? "Receipt updated. Stock was adjusted." : "Receipt updated.");
   };
-  const draftTotal = sale.items.reduce((a, it, i) => a + Math.max(0, (Number(drafts[i]) || 0) * (Number(qtyDrafts[i]) || 0) - (Number(discDrafts[i]) || 0)), 0);
+  const addable = (() => { const q = addQ.trim().toLowerCase(); if (!q) return []; const inUse = new Set([...sale.items.filter((_, i) => !gone[i]).map((i) => i.productId), ...extra.map((e) => e.productId)]); return (ctx.products || []).filter((p) => !inUse.has(p.id) && (p.name.toLowerCase().includes(q) || String(p.sku || "").toLowerCase().includes(q))).slice(0, 6); })();
+  const addExtra = (p) => { setExtra([...extra, { productId: p.id, name: p.name, cost: p.cost, listPrice: p.price, qty: "1", price: String(p.price), disc: "" }]); setAddQ(""); setAddOpen(false); };
+  const draftTotal = keptIdx.reduce((a, i) => a + Math.max(0, (Number(drafts[i]) || 0) * (Number(qtyDrafts[i]) || 0) - (Number(discDrafts[i]) || 0)), 0)
+    + extra.reduce((a, e) => a + Math.max(0, (Number(e.price) || 0) * (Number(e.qty) || 0) - (Number(e.disc) || 0)), 0);
+  const draftDelta = Math.round((draftTotal - sale.total) * 100) / 100;
   const shareImage = async () => {
     setImgBusy(true);
     try {
@@ -1664,11 +1725,15 @@ function ReceiptModal({ sale: saleProp, settings, branch, onClose, showToast, on
           </>
         ) : editing ? (
           <>
-            <div style={{ fontSize: 13.5, color: colors.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>Change the quantity, selling price or discount (₦ off the line) of each item. Totals and any amount owed are recalculated, and stock goes up or down by the quantity you change.</div>
+            <div style={{ fontSize: 13.5, color: colors.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>Change the quantity, selling price or discount (₦ off the line) of each item. The owner can also delete an item or add one. Totals and any amount owed are recalculated, and stock follows.</div>
             <div style={styles.stack8}>
               {sale.items.map((it, i) => (
-                <div key={i} style={{ background: colors.surface2, borderRadius: 14, padding: 12 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14.5 }}>{it.name}</div>
+                <div key={i} style={{ background: colors.surface2, borderRadius: 14, padding: 12, opacity: gone[i] ? 0.55 : 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14.5, textDecoration: gone[i] ? "line-through" : "none" }}>{it.name}</div>
+                    {canReshape && <button type="button" className="icon-btn icon-btn-danger" aria-label={gone[i] ? `Keep ${it.name}` : `Delete ${it.name} from this receipt`} title={gone[i] ? "Keep this item" : "Delete this item"} onClick={() => setGone(gone.map((g, j) => (j === i ? !g : g)))}>{gone[i] ? <RefreshCw size={16} /> : <Trash2 size={16} />}</button>}
+                  </div>
+                  {gone[i] ? <div style={{ fontSize: 12.5, color: colors.red, marginTop: 6 }}>Will be deleted. {it.qty} go back into stock.</div> : (<>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
                     <input style={{ ...styles.input, width: 74, flex: "0 0 74px" }} type="number" inputMode="decimal" step="any" min="0" aria-label={`Quantity for ${it.name}`} value={qtyDrafts[i] ?? ""} onChange={(e) => setQtyDrafts(qtyDrafts.map((d, j) => (j === i ? e.target.value : d)))} />
                     <span style={{ color: colors.inkSoft, fontSize: 13.5 }}>×</span>
@@ -1680,10 +1745,46 @@ function ReceiptModal({ sale: saleProp, settings, branch, onClose, showToast, on
                     <input style={styles.input} type="number" inputMode="decimal" step="0.01" placeholder="0" aria-label={`Discount for ${it.name}`} value={discDrafts[i] ?? ""} onChange={(e) => setDiscDrafts(discDrafts.map((d, j) => (j === i ? e.target.value : d)))} />
                   </div>
                   {Number(drafts[i]) > 0 && (Number(drafts[i]) * (Number(qtyDrafts[i]) || 1) - (Number(discDrafts[i]) || 0)) / (Number(qtyDrafts[i]) || 1) < it.cost && <div style={{ fontSize: 12.5, color: colors.red, marginTop: 6, display: "flex", gap: 4, alignItems: "center" }}><AlertTriangle size={13} /> Below cost ({money(it.cost)})</div>}
+                  </>)}
                 </div>
               ))}
             </div>
+            {extra.map((e, k) => (
+              <div key={e.productId} style={{ background: colors.primarySoft, borderRadius: 14, padding: 12, marginTop: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14.5 }}>{e.name} <Badge kind="ok">New item</Badge></div>
+                  <button type="button" className="icon-btn icon-btn-danger" aria-label={`Remove ${e.name}`} onClick={() => setExtra(extra.filter((_, j) => j !== k))}><Trash2 size={16} /></button>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+                  <input style={{ ...styles.input, width: 74, flex: "0 0 74px" }} type="number" inputMode="decimal" step="any" min="0" aria-label={`Quantity for ${e.name}`} value={e.qty} onChange={(ev) => setExtra(extra.map((x, j) => (j === k ? { ...x, qty: ev.target.value } : x)))} />
+                  <span style={{ color: colors.inkSoft, fontSize: 13.5 }}>×</span>
+                  <input style={styles.input} type="number" inputMode="decimal" step="0.01" aria-label={`Price for ${e.name}`} value={e.price} onChange={(ev) => setExtra(extra.map((x, j) => (j === k ? { ...x, price: ev.target.value } : x)))} />
+                  <span className="num" style={{ fontWeight: 700, minWidth: 84, textAlign: "right" }}>{money(Math.max(0, (Number(e.price) || 0) * (Number(e.qty) || 0) - (Number(e.disc) || 0)))}</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+                  <span style={{ color: colors.inkSoft, fontSize: 13.5, whiteSpace: "nowrap" }}>Discount ₦</span>
+                  <input style={styles.input} type="number" inputMode="decimal" step="0.01" placeholder="0" aria-label={`Discount for ${e.name}`} value={e.disc} onChange={(ev) => setExtra(extra.map((x, j) => (j === k ? { ...x, disc: ev.target.value } : x)))} />
+                </div>
+              </div>
+            ))}
+            {canReshape && (addOpen ? (
+              <div style={{ marginTop: 10 }}>
+                <input autoFocus style={styles.input} placeholder="Search the item to add" aria-label="Search item to add" value={addQ} onChange={(ev) => setAddQ(ev.target.value)} />
+                {addable.length > 0 && <div style={{ marginTop: 6 }}><List>{addable.map((p) => <Row key={p.id} onClick={() => addExtra(p)} lead={<Plus size={20} />} title={p.name} sub={`${getStock(p, sale.branchId)} in stock`} value={money(p.price)} />)}</List></div>}
+                {addQ.trim() && addable.length === 0 && <div style={{ fontSize: 13, color: colors.inkSoft, marginTop: 6 }}>No other item matches.</div>}
+              </div>
+            ) : <div style={{ marginTop: 10 }}><Button variant="secondary" icon={Plus} onClick={() => setAddOpen(true)}>Add an item</Button></div>)}
             <div style={{ ...styles.poTotal, marginTop: 14 }}><span>New total</span><span className="num">{money(draftTotal)}</span></div>
+            {draftDelta !== 0 && (
+              <div style={{ fontSize: 13.5, marginTop: 8, lineHeight: 1.5, color: draftDelta > 0 ? colors.red : colors.green, fontWeight: 600 }}>
+                {isCredit
+                  ? <>Was {money(sale.total)}. The customer's debt on this receipt {draftDelta > 0 ? "goes up" : "comes down"} by {money(Math.abs(draftDelta))}.</>
+                  : draftDelta > 0
+                    ? <>Was {money(sale.total)}. The customer must pay {money(draftDelta)} more.</>
+                    : <>Was {money(sale.total)}. Give the customer back {money(Math.abs(draftDelta))}.</>}
+              </div>
+            )}
+            {!canReshape && isAdminLike(ctx) && <div style={{ fontSize: 12.5, color: colors.inkSoft, marginTop: 8 }}>Items cannot be added or deleted after a return.</div>}
             <div className="sheet-actions">
               <Button variant="secondary" onClick={() => setEditing(false)}>Cancel</Button>
               <Button icon={Check} onClick={saveEdit}>Save changes</Button>
@@ -1693,7 +1794,7 @@ function ReceiptModal({ sale: saleProp, settings, branch, onClose, showToast, on
         <div style={{ display: "flex", alignItems: "center", gap: 12, background: isCredit ? colors.redSoft : colors.greenSoft, color: isCredit ? colors.red : colors.green, borderRadius: 14, padding: "12px 14px", marginBottom: 14 }}>
           <CircleCheck size={26} />
           <div>
-            <div className="num" style={{ fontWeight: 700, fontSize: 20, letterSpacing: "-0.02em" }}>{money(sale.total)}{sale.edited && <span style={{ marginLeft: 8, verticalAlign: 3 }}><Badge kind="warn">Price edited</Badge></span>}{saleRefunded(sale) > 0 && <span style={{ marginLeft: 8, verticalAlign: 3 }}><Badge kind="danger">Returned −{money(saleRefunded(sale))}</Badge></span>}</div>
+            <div className="num" style={{ fontWeight: 700, fontSize: 20, letterSpacing: "-0.02em" }}>{money(sale.total)}{sale.edited && <span style={{ marginLeft: 8, verticalAlign: 3 }}><Badge kind="warn">Edited</Badge></span>}{saleRefunded(sale) > 0 && <span style={{ marginLeft: 8, verticalAlign: 3 }}><Badge kind="danger">Returned −{money(saleRefunded(sale))}</Badge></span>}</div>
             <div style={{ fontSize: 13 }}>{isCredit ? `${money(sale.balanceDue)} still owed` : sale.amountTendered > sale.total ? `Change due ${money(sale.amountTendered - sale.total)}` : "Paid in cash"}</div>
           </div>
         </div>
@@ -2120,7 +2221,7 @@ function Checkout({ products, setProducts, sales, setSales, customers, setCustom
           <div>
             <SectionHeader title={browse === "quick" ? "Quick sale" : "All items"} action={products.length > 0 ? <div style={{ width: 190 }}><Segmented value={browse} onChange={setBrowse} options={[["quick", "Quick"], ["all", `All (${products.length})`]]} /></div> : null} />
             {products.length > 0 && browse === "all" ? (
-              <List>
+              <List wide>
                 {allSorted.map((p) => {
                   const st = getStock(p, activeBranchId);
                   const inCart = (cart.find((i) => i.id === p.id) || {}).qty || 0;
@@ -2168,7 +2269,7 @@ function Checkout({ products, setProducts, sales, setSales, customers, setCustom
       {cartOpen && <div className="co-backdrop" onClick={() => setCartOpen(false)} />}
       {cartOpen && <BackClose onClose={() => setCartOpen(false)} />}
       <div className={"co-cart" + (cartOpen ? " open" : "")}>
-        <div className="sheet-grab" style={{ display: "block" }} />
+        <div className="sheet-grab co-grab" style={{ display: "block" }} />
         <div className="co-cart-head" style={{ padding: "12px 0 4px" }}>
           <div>
             <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em" }}>Current sale</div>
@@ -2829,7 +2930,7 @@ function SalesHistory({ sales, setSales, currentUser, isAdmin, branches, multiBr
               <div style={{ marginTop: 3, display: "flex", gap: 6, justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
                 <Badge kind={s.paymentType === "credit" ? "danger" : "primary"}>{s.paymentType === "credit" ? "Credit" : "Cash"}</Badge>
                 {saleDiscount(s.items) > 0 && <Badge kind="ok">−{money(saleDiscount(s.items))}</Badge>}
-                {s.edited && <Badge kind="warn">Price edited</Badge>}
+                {s.edited && <Badge kind="warn">Edited</Badge>}
                 {saleRefunded(s) > 0 && <Badge kind="danger">Returned</Badge>}
               </div>
             </Row>

@@ -29,7 +29,8 @@ export function buildImportPayload(state) {
     payment_method: x.paymentType === "credit" ? "credit" : "cash", due_date: s(x.dueDate),
     amount_paid: Math.max(0, n(x.amountTendered)), balance_due: x.paymentType === "credit" ? Math.max(0, n(x.balanceDue)) : 0,
     total: r2(n(x.total)), cost_total: Math.max(0, n(x.cost)),
-    items: (x.items || []).map((i) => ({ product: s(i.productId), name: s(i.name), qty: n(i.qty), price: Math.max(0, n(i.price)), cost: Math.max(0, n(i.cost)) })),
+    items: (x.items || []).map((i) => ({ product: s(i.productId), name: s(i.name), qty: n(i.qty), price: Math.max(0, n(i.price)), cost: Math.max(0, n(i.cost)), discount: Math.max(0, n(i.discount)) })),
+    returns: (Array.isArray(x.returns) ? x.returns : []).map((r) => ({ time: s(r.time), date: s(r.date), reason: s(r.reason), restock: r.restock !== false, amount: r2(n(r.amount)), cash_back: r2(n(r.cashBack)), items: (r.items || []).map((i) => ({ product: s(i.productId), qty: n(i.qty), amount: r2(n(i.amount)) })) })),
   }));
   const credit_payments = (state.creditPayments || []).map((c) => ({
     legacy_id: s(c.id), receipt_no: s(c.receiptNo), customer: s(c.customerId), branch: s(c.branchId), amount: n(c.amount),
