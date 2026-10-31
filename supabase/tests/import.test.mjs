@@ -95,4 +95,31 @@ const p5 = buildImportPayload(phone); p5.source_hash = "ok2";
 eq("shop 2 can import the same data (separate tenant)", (await rpc("owner2", "import_legacy", p5)).status, "imported");
 eq("shops stay separate", (await q(`select count(*)::int c from sales where shop_id='${shop.shop_id}'`))[0].c, 4);
 eq("owner of shop 1 sees none of shop 2's imported rows", (await as("owner", `select count(*)::int c from sales where shop_id='${shop2.shop_id}'`)).rows[0].c, 0);
+
+// ---- v1.13+ data: line discounts and customer returns (this used to fail with import_sale_total_mismatch)
+U.owner3 = crypto.randomUUID(); await db.query("insert into auth.users(id) values($1)", [U.owner3]);
+const shop3 = await rpc("owner3", "create_shop", "Mai Agogo", "maiagogo", "Haruna");
+const phoneD = {
+  branches: [{ id: "b1", name: "Main Branch" }],
+  products: [{ id: "p1", name: "Item A", sku: "A", cost: 90000, price: 100000, stock: { b1: 5 } }, { id: "p2", name: "Item B", sku: "B", cost: 20000, price: 23500, stock: { b1: 9 } }],
+  customers: [],
+  sales: [
+    { id: "s-d1", invoiceNo: 1, date: "2026-10-01", time: "2026-10-01T09:00:00.000Z", branchId: "b1", cashierName: "Haruna", paymentType: "cash", amountTendered: 244800, balanceDue: 0, total: 244800, cost: 200000,
+      items: [{ productId: "p1", name: "Item A", qty: 2, price: 100000, cost: 90000, discount: 2200 }, { productId: "p2", name: "Item B", qty: 2, price: 23500, cost: 20000 }],
+      returns: [{ id: "r1", time: "2026-10-02T10:00:00.000Z", date: "2026-10-02", reason: "Faulty", restock: true, amount: 23500, cashBack: 23500, items: [{ productId: "p2", name: "Item B", qty: 1, amount: 23500, cost: 20000 }] }] },
+    { id: "s-d2", invoiceNo: 2, date: "2026-10-03", time: "2026-10-03T09:00:00.000Z", branchId: "b1", cashierName: "Haruna", paymentType: "cash", amountTendered: 3000, balanceDue: 0, total: 3000, cost: 2000,
+      items: [{ productId: "p2", name: "Item B", qty: 1, price: 3000, cost: 2000, discount: 0 }] },
+  ],
+  creditPayments: [], purchases: [], expenses: [], dayCloses: {},
+};
+const pd = buildImportPayload(phoneD);
+const rd = await rpc("owner3", "import_legacy", pd);
+eq("discounted sale + return imports", rd.status, "imported");
+const q3 = async (sql) => (await as("super", sql)).rows;
+eq("sale subtotal / discount / total", (await q3(`select subtotal::float s, discount_total::float d, total::float t, refunded_total::float r, status from sales where shop_id='${shop3.shop_id}' and legacy_id='s-d1'`))[0], { s: 247000, d: 2200, t: 244800, r: 23500, status: "partially_refunded" });
+eq("line discount stored", (await q3(`select discount::float d, line_total::float t from sale_items where shop_id='${shop3.shop_id}' and name='Item A'`))[0], { d: 2200, t: 197800 });
+eq("return stored as history, stock untouched", (await q3(`select (select count(*) from refunds where shop_id='${shop3.shop_id}')::int r, (select sum(qty)::float from stock_levels where shop_id='${shop3.shop_id}') s`))[0], { r: 1, s: 14 });
+const phoneDisc = JSON.parse(JSON.stringify(phoneD)); phoneDisc.sales[1].id = "s-d3"; phoneDisc.sales[1].items[0].discount = 500;
+const pd2 = buildImportPayload(phoneDisc); pd2.source_hash = "d2"; pd2.sales[1].total = 3000;
+await bad("a discount that does not add up is still refused", () => rpc("owner3", "import_legacy", pd2), /import_sale_total_mismatch/);
 console.log(`${pass} passed, ${fail} failed`); if (fail) process.exit(1);

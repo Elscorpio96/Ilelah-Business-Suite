@@ -135,7 +135,7 @@ export function EmptyState({ icon: Icon = Inbox, title, text, action }) {
   );
 }
 
-export function List({ children, style }) { return <div className="list" style={style}>{children}</div>; }
+export function List({ children, style, wide }) { return <div className={"list" + (wide ? " list-wide" : "")} style={style}>{children}</div>; }
 
 export function Row({ lead, leadTone, title, sub, value, valueSub, valueColor, onClick, chevron, children }) {
   const inner = (
@@ -188,8 +188,20 @@ export function Field({ label, children, span, hint }) {
 // Bottom sheet on phones, centred dialog on larger screens. Same API as the old Modal.
 export function Modal({ title, onClose, children }) {
   useBackClose(onClose);
+  const ovRef = React.useRef(null);
+  // Esc closes the window on top (PC keyboards)
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      const all = document.querySelectorAll(".sheet-overlay");
+      if (all.length && all[all.length - 1] !== ovRef.current) return;
+      onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
   return (
-    <div className="sheet-overlay" onClick={onClose}>
+    <div className="sheet-overlay" ref={ovRef} onClick={onClose}>
       <div className="sheet" role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
         <div className="sheet-grab" />
         <div className="sheet-head">

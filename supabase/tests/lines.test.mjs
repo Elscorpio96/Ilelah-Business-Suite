@@ -1,3 +1,4 @@
+import { reviseSale, stockDiffs } from "../../src/saleedit.js";
 import { round2, lineTotal, saleTotal, saleDiscount, saleSubtotal, discountAmount, priceCart, canEditSale, effectiveUnit } from "../../src/lines.js";
 let pass = 0, fail = 0; const eq = (l, a, b) => (JSON.stringify(a) === JSON.stringify(b) ? pass++ : (fail++, console.log("FAIL", l, JSON.stringify(a), "!=", JSON.stringify(b))));
 eq("line total with discount", lineTotal({ qty: 3, price: 1000, discount: 250 }), 2750);
@@ -19,4 +20,24 @@ eq("cashier edits own sale today", canEditSale(joy, { cashierId: "j", date: "202
 eq("cashier cannot edit yesterday's", canEditSale(joy, { cashierId: "j", date: "2026-10-13" }, "2026-10-14"), false);
 eq("cashier cannot edit someone else's", canEditSale(joy, { cashierId: "k", date: "2026-10-14" }, "2026-10-14"), false);
 eq("old sale without cashierId matches by name", canEditSale(joy, { cashierName: "Joy", date: "2026-10-14" }, "2026-10-14"), true);
+
+// ---- owner adds / deletes items on a finished sale
+{
+  const sale = { id: "s", total: 4000, cost: 2500, amountTendered: 4000, balanceDue: 0, paymentType: "cash", branchId: "b",
+    items: [{ productId: "A", name: "A", qty: 2, price: 1000, cost: 500, discount: 0 }, { productId: "B", name: "B", qty: 4, price: 500, cost: 300, discount: 0 }] };
+  const gone = reviseSale(sale, { kept: [{ index: 0, qty: 2, price: 1000, discount: 0 }], added: [] });
+  eq("delete a line: total and cost follow", [gone.total, gone.cost, gone.items.length], [2000, 1000, 1]);
+  eq("cash sale, lower total: payment stays so change shows", [gone.amountTendered, gone.balanceDue], [4000, 0]);
+  eq("stock goes back for the deleted line", stockDiffs(sale, gone), { B: 4 });
+  const more = reviseSale(sale, { kept: [{ index: 0, qty: 2, price: 1000, discount: 0 }, { index: 1, qty: 4, price: 500, discount: 0 }], added: [{ productId: "C", name: "C", qty: 3, price: 700, discount: 100, cost: 400 }] });
+  eq("add a line: total follows", more.total, 6000);
+  eq("cash sale, higher total: payment raised so the customer pays the difference", more.amountTendered, 6000);
+  eq("stock comes off for the added line", stockDiffs(sale, more), { C: -3 });
+  eq("revision is remembered", more.revisions.map((r) => [r.delta, r.added, r.removed]), [[2000, ["C"], []]]);
+  const credit = reviseSale({ ...sale, paymentType: "credit", amountTendered: 1000, balanceDue: 3000 }, { kept: [{ index: 0, qty: 2, price: 1000, discount: 0 }], added: [] });
+  eq("credit sale: the amount owed follows the total", [credit.total, credit.amountTendered, credit.balanceDue], [2000, 1000, 1000]);
+  let threw = false; try { reviseSale(sale, { kept: [], added: [] }); } catch (e) { threw = /sale_needs_a_line/.test(e.message); }
+  eq("a sale cannot lose every line", threw, true);
+  eq("quantity change only: stock difference by product", stockDiffs(sale, reviseSale(sale, { kept: [{ index: 0, qty: 5, price: 1000, discount: 0 }, { index: 1, qty: 4, price: 500, discount: 0 }], added: [] })), { A: -3 });
+}
 console.log(`${pass} passed, ${fail} failed`); if (fail) process.exit(1);

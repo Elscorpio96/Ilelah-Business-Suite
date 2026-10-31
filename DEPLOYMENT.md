@@ -137,3 +137,28 @@ Sources: [Supabase pricing](https://supabase.com/pricing).
 * Local mode refuses a quantity larger than the stock on hand. Cloud mode lets the server accept it and flags a stock discrepancy (same as an offline sale).
 * **Cloud shops: run `supabase/migrations/0009_edit_quantity.sql` BEFORE updating phones** (it replaces `edit_sale_prices`; additive, safe to run twice, old phones keep working). A new phone talking to a database without 0009 would change the quantity on the phone but not in the cloud.
 * Every quantity change is written to the stock ledger and the audit log (who, why, before/after). Tests added to `discounts.test.mjs` (29 pass).
+
+## 15. Windows computer version (v1.16 look and feel)
+The same app, in a Windows 10/11 desktop shell (Electron). One program contains both modes: **Local** (default, offline) and the optional **Cloud** mode, which only appears when the build was given the Supabase URL and public anon key.
+* **Install:** run `Ilelah-Business-Suite-Setup-1.15.0.exe` (no administrator rights needed). It adds a Desktop and Start-menu shortcut.
+* **Where records are kept:** `%APPDATA%\Ilelah Business Suite` on that PC. Updating or uninstalling does **not** delete them. Use Settings → Backup regularly, exactly as on the phone.
+* **Activation:** same as the phone. The PC shows its own Device ID; make a code with the licence generator. A phone code does not work on a PC (each device has its own ID).
+* **Update a PC:** run the newer Setup.exe over the old one. Records stay.
+* **Building:** GitHub → Actions → *Build Windows installers* → Run workflow. It makes `...-Offline-Setup...exe` and, when the secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY` exist (public anon key only), `...-Online-Setup...exe`. Download them from the run's *windows-installers* artifact.
+* **Local build on a PC:** `npm ci`, `npm run build:web`, then in `desktop/`: `npm install` and `npx electron-builder --win nsis --x64`.
+* A phone and a PC in the same shop only share data when both are in Cloud mode with the same shop code. In Local mode each device keeps its own records.
+* Windows may show "Windows protected your PC" on first run because the installer is not code-signed; click *More info → Run anyway*.
+* **PC layout (screens 1024 px wide and up):** left sidebar menu, top bar with page title and sync/branch/account, wider dashboard (sales card beside the day summary), two-column product lists, bigger cart panel, hover highlights. Phones and narrow windows keep the phone layout unchanged. The window opens maximised.
+* **Keyboard shortcuts:** F2 new sale, F9 or Ctrl+Enter complete sale, Ctrl+K or / search, Alt+1…9 sidebar sections, Esc closes a window, F1 or ? shows the list.
+
+## 16. Fix: "import_sale_total_mismatch" when switching a phone to Cloud mode (v1.16 / migration 0010)
+* **Cause:** the one-time copy of a phone's records to the cloud did not know about line discounts (added in v1.13) or customer returns (v1.13). A sale whose items add up to ₦247,000 but was sold for ₦244,800 after a ₦2,200 discount was refused, and nothing was copied.
+* **Fix:** run `supabase/migrations/0010_import_discounts_returns.sql` once in the Supabase SQL Editor (after 0009), then install the new app (Android v1.16 or the Windows v1.16.1 installers). The copy now carries each line's discount and each return (as history only; the phone's stock and balances already include them), and the server still refuses a sale whose figures do not add up.
+* The old app can still be used with the fixed SQL for sales without discounts, but sales with discounts need the new app too, because only the new app sends the discount.
+
+## 17. v1.17: the owner can add or delete an item on a finished receipt (migration 0011)
+* **Where:** open a receipt (Sales history) → **Edit sale**. The owner sees a bin button on every item and **Add an item**. Cashiers and managers still only change quantity, price and discount.
+* **Rules:** owner only; not allowed after a return on that sale; a receipt must keep at least one item (to cancel everything use Return items).
+* **Stock:** a deleted item goes back on the shelf, an added item comes off it (Local mode refuses an added quantity above what is in stock).
+* **Money:** the screen shows the difference before saving. Cash sale: "customer must pay ₦X more" or "give the customer back ₦X". Credit sale: the amount owed goes up or down by the difference. The receipt shows an **Edited** badge.
+* **Cloud mode:** run `supabase/migrations/0011_revise_sale_lines.sql` once in the SQL Editor (after 0010) **before** installing the new app on phones. Every change is written to the stock ledger and the audit log. Only an owner/admin login is accepted by the server.

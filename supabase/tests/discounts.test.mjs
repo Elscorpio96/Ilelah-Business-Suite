@@ -95,4 +95,27 @@ eq("every stock change is in the ledger", [mv.c, num(mv.d)], [2, -2]);
 const s4 = mk([{ product_id: A, qty: 4, unit_price: 1000 }]); await rpc("joy", "record_sale", s4);
 await rpc("owner", "refund_sale", s4.id, [{ product_id: A, qty: 1 }], true, "bad", null);
 await denied("quantity cannot change once a return exists", () => rpc("owner", "edit_sale_prices", s4.id, [{ product_id: A, qty: 2 }], "x"), /sale_not_editable|sale_has_returns/);
+
+// 5. owner adds / deletes items on a finished sale (0011)
+const C = await prod("C", 200); await rpc("owner", "adjust_stock", br, C, 50, "r");
+const s5 = mk([{ product_id: A, qty: 2, unit_price: 1000 }, { product_id: B, qty: 3, unit_price: 500 }]); await rpc("joy", "record_sale", s5);
+const a0 = await stock(A), b0 = await stock(B), c0 = await stock(C);
+await denied("a cashier cannot add or delete items", () => rpc("joy", "revise_sale", s5.id, [{ product_id: A, qty: 2, unit_price: 1000 }], "x"), /admin_required/);
+await denied("a reason is required", () => rpc("owner", "revise_sale", s5.id, [{ product_id: A, qty: 2, unit_price: 1000 }], " "), /reason_required/);
+await denied("the last line cannot be deleted", () => rpc("owner", "revise_sale", s5.id, [], "x"), /sale_needs_a_line/);
+await denied("an unknown product is refused", () => rpc("owner", "revise_sale", s5.id, [{ product_id: uuid(), qty: 1, unit_price: 5 }], "x"), /unknown_product/);
+const out5 = await rpc("owner", "revise_sale", s5.id, [{ product_id: A, qty: 2, unit_price: 1000 }, { product_id: C, qty: 4, unit_price: 200, discount: 50 }], "added C, removed B");
+r = await row(s5.id);
+eq("B deleted, C added: totals follow", [num(r.total), num(r.subtotal), num(r.discount_total), num(out5.total)], [2750, 2800, 50, 2750]);
+eq("stock: B back on the shelf, C taken off, A untouched", [await stock(A), await stock(B), await stock(C)], [a0, b0 + 3, c0 - 4]);
+eq("sale lines are now A and C only", (await as("super", "select string_agg(name, ',' order by name) n from sale_items where sale_id=$1", [s5.id])).rows[0].n, "A,C");
+eq("new line took the catalogue cost and list price", (await as("super", "select unit_cost::float c, list_price::float l from sale_items where sale_id=$1 and product_id=$2", [s5.id, C])).rows[0], { c: 50, l: 200 });
+eq("changes are in the ledger", num((await as("super", "select count(*) c from stock_movements where ref_id=$1 and ref_type='sale_edit'", [s5.id])).rows[0].c), 2);
+eq("audit entry written", num((await as("super", "select count(*) c from audit_log where action='sale.revise_lines' and entity_id=$1", [s5.id])).rows[0].c), 1);
+const s6 = mk([{ product_id: A, qty: 2, unit_price: 1000 }], { payment_method: "credit", amount_paid: 500, customer: { id: cust, name: "Ade" } }); await rpc("joy", "record_sale", s6);
+await rpc("owner", "revise_sale", s6.id, [{ product_id: A, qty: 2, unit_price: 1000 }, { product_id: B, qty: 2, unit_price: 500 }], "added B"); r = await row(s6.id);
+eq("credit sale: the amount owed follows the new total", [num(r.total), num(r.amount_paid), num(r.balance_due)], [3000, 500, 2500]);
+const s7 = mk([{ product_id: A, qty: 3, unit_price: 1000 }, { product_id: B, qty: 1, unit_price: 500 }]); await rpc("joy", "record_sale", s7);
+await rpc("owner", "refund_sale", s7.id, [{ product_id: B, qty: 1 }], true, "bad", null);
+await denied("no adding or deleting after a return", () => rpc("owner", "revise_sale", s7.id, [{ product_id: A, qty: 3, unit_price: 1000 }], "x"), /sale_not_editable/);
 console.log(`${pass} passed, ${fail} failed`); if (fail) process.exit(1);
