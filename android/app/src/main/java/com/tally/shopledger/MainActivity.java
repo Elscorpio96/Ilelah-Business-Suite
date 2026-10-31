@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(TallyPrintPlugin.class);
         registerPlugin(TallyBluetoothPlugin.class);
+        registerPlugin(TallyFilesPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

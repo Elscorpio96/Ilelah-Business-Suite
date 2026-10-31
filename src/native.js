@@ -5,6 +5,7 @@ import { StatusBar, Style } from "@capacitor/status-bar";
 import { AppLauncher } from "@capacitor/app-launcher";
 
 const isNative = Capacitor.isNativePlatform();
+export const deviceWord = isNative ? "phone" : "computer";
 
 // Save text to a temp file and open the Android share sheet
 // (Save to Drive / Files, WhatsApp, email, Bluetooth, ...).
@@ -78,4 +79,19 @@ if (isNative) {
   StatusBar.setStyle({ style: Style.Light }).catch(() => {});
   StatusBar.setBackgroundColor({ color: "#F4F3EE" }).catch(() => {});
   StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
+}
+
+// "Save to phone": Android's file picker, so the person chooses the folder (Downloads, Documents, SD card...).
+// Returns true when the file was written, false when they backed out. Browsers/PCs get a normal download.
+export async function saveToPhone(filename, text, mime) {
+  if (!isNative) { await saveAndShare(filename, text, mime); return true; }
+  try {
+    const Files = registerPlugin("TallyFiles");
+    const r = await Files.save({ filename, mime: mime || "application/octet-stream", data: text, base64: false });
+    return !!(r && r.saved);
+  } catch (e) {
+    // older app build without the plugin, or the picker is unavailable: use the share sheet instead
+    if (/not implemented|unimplemented|not available/i.test(String((e && e.message) || e))) { await saveAndShare(filename, text, mime); return true; }
+    throw e;
+  }
 }

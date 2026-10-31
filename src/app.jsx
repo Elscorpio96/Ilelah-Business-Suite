@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import "./native.js";
-import { saveAndShare, shareText, saveAndShareBase64, openExternal } from "./native.js";
+import { saveAndShare, saveToPhone, deviceWord, shareText, saveAndShareBase64, openExternal } from "./native.js";
 import { isBelowCost, marginPct, byProduct, byCashier, byPayment, byDay, profitSummary, dayClose, dayCloseText, normalizePhone, reminderMessage, waLink, smsLink, pickQuickProducts, buildReportWorkbook, payLabel, collectedNet } from "./finance.js";
 import { startScanner, feedback } from "./scanner.js";
 import { printerAvailable, listPairedDevices, bluetoothStatus, openBluetoothSettings } from "./printer-bridge.js";
@@ -3836,6 +3836,11 @@ function ShopSettings({ settings, setSettings, showToast, branches, setBranches,
       .then(() => showToast("Backup ready."))
       .catch(() => showToast("Could not create the backup.", "err"));
   };
+  const saveBackupToPhone = () => {
+    saveToPhone(`ilayla-backup-${todayStr()}.json`, JSON.stringify(fullState, null, 2), "application/json")
+      .then((ok) => { if (ok) showToast(`Backup saved to your ${deviceWord}.`); })
+      .catch(() => showToast("Could not save the backup.", "err"));
+  };
 
   const onFilePicked = (e) => {
     const file = e.target.files && e.target.files[0];
@@ -3907,7 +3912,7 @@ function ShopSettings({ settings, setSettings, showToast, branches, setBranches,
 
       <PrinterPanel settings={settings} showToast={showToast} />
 
-      <CloudPanel showToast={showToast} fullState={fullState} onBackup={() => saveAndShare(`ilayla-backup-${todayStr()}.json`, JSON.stringify(fullState, null, 2), "application/json").then(() => showToast("Backup ready.")).catch(() => { showToast("Could not save the backup.", "err"); throw new Error("backup"); })} />
+      <CloudPanel showToast={showToast} fullState={fullState} onBackup={() => saveToPhone(`ilayla-backup-${todayStr()}.json`, JSON.stringify(fullState, null, 2), "application/json").then((ok) => { if (!ok) { showToast("Backup not saved. Choose a folder and press Save.", "err"); throw new Error("backup"); } showToast(`Backup saved to your ${deviceWord}.`); }).catch((e) => { if (!e || e.message !== "backup") showToast("Could not save the backup.", "err"); throw new Error("backup"); })} />
 
       <div>
         <SectionHeader title="Backup and restore" />
@@ -3919,7 +3924,8 @@ function ShopSettings({ settings, setSettings, showToast, branches, setBranches,
           </div>
           <input ref={fileInputRef} type="file" accept="application/json" style={{ display: "none" }} onChange={onFilePicked} />
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
-            <Button full icon={DownloadIcon} onClick={downloadBackup}>Save / share backup</Button>
+            <Button full icon={DownloadIcon} onClick={saveBackupToPhone}>Save backup to this {deviceWord}</Button>
+            <Button full variant="secondary" icon={Share2} onClick={downloadBackup}>Share backup (WhatsApp, Drive, e-mail)</Button>
             {!cloudOn && <Button full variant="secondary" icon={UploadIcon} onClick={() => fileInputRef.current.click()}>Restore from backup</Button>}
           </div>
         </div>
