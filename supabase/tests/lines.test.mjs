@@ -1,4 +1,4 @@
-import { reviseSale, stockDiffs } from "../../src/saleedit.js";
+import { reviseSale, applyDetails, stockDiffs } from "../../src/saleedit.js";
 import { round2, lineTotal, saleTotal, saleDiscount, saleSubtotal, discountAmount, priceCart, canEditSale, effectiveUnit } from "../../src/lines.js";
 let pass = 0, fail = 0; const eq = (l, a, b) => (JSON.stringify(a) === JSON.stringify(b) ? pass++ : (fail++, console.log("FAIL", l, JSON.stringify(a), "!=", JSON.stringify(b))));
 eq("line total with discount", lineTotal({ qty: 3, price: 1000, discount: 250 }), 2750);
@@ -39,5 +39,22 @@ eq("old sale without cashierId matches by name", canEditSale(joy, { cashierName:
   let threw = false; try { reviseSale(sale, { kept: [], added: [] }); } catch (e) { threw = /sale_needs_a_line/.test(e.message); }
   eq("a sale cannot lose every line", threw, true);
   eq("quantity change only: stock difference by product", stockDiffs(sale, reviseSale(sale, { kept: [{ index: 0, qty: 5, price: 1000, discount: 0 }, { index: 1, qty: 4, price: 500, discount: 0 }], added: [] })), { A: -3 });
+}
+
+// ---- receipt details: customer name, cash <-> credit
+{
+  const cash = { id: "s", total: 5000, amountTendered: 5000, balanceDue: 0, paymentType: "cash", customerName: "", customerPhone: "", customerId: null, items: [] };
+  const fixed = applyDetails(cash, { customerName: "  Aisha ", customerPhone: "0801" });
+  eq("name and phone fixed, still cash", [fixed.customerName, fixed.customerPhone, fixed.paymentType, fixed.edited], ["Aisha", "0801", "cash", true]);
+  eq("revision notes what changed", fixed.revisions[0].details, ["customer name", "phone"]);
+  const cr = applyDetails(cash, { customerName: "Aisha", customerId: "c1", paymentType: "credit", amountTendered: 2000, dueDate: "2026-12-01" });
+  eq("cash corrected to credit", [cr.paymentType, cr.amountTendered, cr.balanceDue, cr.dueDate, cr.customerId], ["credit", 2000, 3000, "2026-12-01", "c1"]);
+  let e1 = ""; try { applyDetails(cash, { paymentType: "credit", amountTendered: 0 }); } catch (e) { e1 = e.message; }
+  eq("credit needs a customer", e1, "customer_required");
+  let e2 = ""; try { applyDetails(cash, { customerName: "A", customerId: "c1", paymentType: "credit", amountTendered: 9000 }); } catch (e) { e2 = e.message; }
+  eq("deposit above total refused", e2, "invalid_deposit");
+  const back = applyDetails(cr, { paymentType: "cash" });
+  eq("credit back to cash: paid in full, no debt, no due date", [back.paymentType, back.amountTendered, back.balanceDue, back.dueDate], ["cash", 5000, 0, ""]);
+  eq("no change returns the same sale", applyDetails(cash, {}) === cash, true);
 }
 console.log(`${pass} passed, ${fail} failed`); if (fail) process.exit(1);

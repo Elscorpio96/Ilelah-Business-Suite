@@ -8,7 +8,7 @@ import { printerAvailable, listPairedDevices, bluetoothStatus, openBluetoothSett
 import { getPrinter, setPrinter, printBytes, buildSale, buildPayment, buildText, buildTest } from "./printer.js";
 import { TEMPLATE_CSV, readFileToRows, buildPlan, applyPlan, inventoryToCsv, parseDelimited } from "./bulk.js";
 import { renderReceiptPng } from "./receipt-image.js";
-import { repriceSale, reviseSale, stockDiffs } from "./saleedit.js";
+import { repriceSale, reviseSale, applyDetails, stockDiffs } from "./saleedit.js";
 import { getUi, setUi, applyUi, THEMES, TEXT_SIZES } from "./appearance.js";
 import { LOGO_MARK } from "./logo.js";
 import { hasPin, setPin, clearPin, isLockedFlag, setLockedFlag } from "./security.js";
@@ -443,7 +443,17 @@ function App({ license }) {
   // Returns: the owner does them. In Local mode a cashier can too, once the owner types their PIN. In Cloud mode the server only accepts the owner.
   const canReturn = (sale) => !!sale && (sale.items || []).some((i) => returnableQty(sale, i) > 0) && (isAdmin || (!cloudOn && admins.some((a) => hasPin(a.id))));
   const needsOwner = !isAdmin;
-  const ctxValue = { confirm: askConfirm, askOwner: () => (needsOwner ? askOwnerRaw() : Promise.resolve(true)), doReturn, canReturn, applyQtyEdit, applyLineChanges, products, ui: uiPrefs, changeUi, lockNow, cloudOn, switchUser, users, currentUser, showToast,
+  const ensureCustomer = (name, phone) => {
+    const n = String(name || "").trim().toLowerCase(), ph = String(phone || "").trim();
+    const hit = customers.find((c) => c.name.trim().toLowerCase() === n && (ph ? c.phone === ph : true));
+    if (hit) return hit.id;
+    const nc = { id: makeId("c-", uid), name: String(name).trim(), phone: ph, discountPct: 0 };
+    setCustomers((prev) => [...prev, nc]);
+    return nc.id;
+  };
+  const renameCustomer = (id, name, phone) => setCustomers((prev) => prev.map((c) => (c.id === id ? { ...c, name, phone } : c)));
+  const owedBy = (customerId) => (customerId ? Math.max(0, creditBalance(customerId, sales, creditPayments)) : 0);
+  const ctxValue = { confirm: askConfirm, askOwner: () => (needsOwner ? askOwnerRaw() : Promise.resolve(true)), doReturn, canReturn, applyQtyEdit, applyLineChanges, products, customers, ensureCustomer, renameCustomer, owedBy, ui: uiPrefs, changeUi, lockNow, cloudOn, switchUser, users, currentUser, showToast,
     pinSet: hasPin(currentUser.id), setMyPin: async (pin) => { await setPin(currentUser.id, pin); setUiPrefs(getUi()); }, clearMyPin: () => { clearPin(currentUser.id); changeUi({ autoLock: 0 }); } };
 
   return (
@@ -866,7 +876,7 @@ function TopBar({ tab, setTab, lowStockCount, currentUser, onLogout, isAdmin, br
         </div>
         <div className="side-foot">
           <button type="button" onClick={() => setKeysOpen(true)}><Info size={17} /> Keyboard shortcuts<span style={{ marginLeft: "auto", opacity: .6 }}>F1</span></button>
-          <div className="ver">{LICENSE_CONFIG.productName} · v1.17 for Windows</div>
+          <div className="ver">{LICENSE_CONFIG.productName} · v1.18 for Windows</div>
         </div>
       </header>
 
@@ -1598,6 +1608,7 @@ function receiptText(sale, settings, branch) {
   if (saleRefunded(sale) > 0) { lines.push(`Returned: -${money(saleRefunded(sale))}`); lines.push(`Net after returns: ${money(saleNet(sale))}`); }
   lines.push(isCredit ? `Deposit Paid: ${money(sale.amountTendered)}` : `Payment: Cash ${money(sale.amountTendered)}`);
   lines.push(isCredit ? `AMOUNT OWED (CREDIT): ${money(sale.balanceDue)}` : `Balance: ${money(sale.balanceDue)}`);
+  if (Number(sale.prevBalance) > 0) { lines.push(`Owed from before: ${money(sale.prevBalance)}`); lines.push(`TOTAL OWED NOW: ${money(Number(sale.prevBalance) + Number(sale.balanceDue || 0))}`); }
   lines.push("----------------------------------------");
   lines.push("Customer Sign: ____________  Date: _______");
   lines.push(isCredit ? "Goods released on credit. Balance must be settled as agreed." : "Received the above goods in good condition.");
@@ -1646,8 +1657,10 @@ function ReceiptModal({ sale: saleProp, settings, branch, onClose, showToast, on
   const [gone, setGone] = useState([]);                 // lines the owner has marked for deletion
   const [extra, setExtra] = useState([]);               // items the owner is adding: { productId, name, cost, listPrice, qty, price, disc }
   const [addQ, setAddQ] = useState(""); const [addOpen, setAddOpen] = useState(false);
+  const [dName, setDName] = useState(""); const [dPhone, setDPhone] = useState(""); const [dType, setDType] = useState("cash"); const [dPaid, setDPaid] = useState(""); const [dDue, setDDue] = useState("");
+  const canMoney = isAdminLike(ctx) && saleReturns(sale).length === 0 && !(saleRefunded(sale) > 0) && (sale.status || "completed") === "completed";
   const canReshape = isAdminLike(ctx) && saleReturns(sale).length === 0 && !(saleRefunded(sale) > 0) && (sale.status || "completed") === "completed";
-  const startEdit = () => { setGone(sale.items.map(() => false)); setExtra([]); setAddQ(""); setAddOpen(false); setQtyDrafts(sale.items.map((i) => String(i.qty))); setDrafts(sale.items.map((i) => String(i.price))); setDiscDrafts(sale.items.map((i) => (lineDiscount(i) ? String(lineDiscount(i)) : ""))); setEditing(true); };
+  const startEdit = () => { setDName(sale.customerName || ""); setDPhone(sale.customerPhone || ""); setDType(isCredit ? "credit" : "cash"); setDPaid(isCredit ? String(sale.amountTendered) : ""); setDDue(sale.dueDate || ""); setGone(sale.items.map(() => false)); setExtra([]); setAddQ(""); setAddOpen(false); setQtyDrafts(sale.items.map((i) => String(i.qty))); setDrafts(sale.items.map((i) => String(i.price))); setDiscDrafts(sale.items.map((i) => (lineDiscount(i) ? String(lineDiscount(i)) : ""))); setEditing(true); };
   const keptIdx = sale.items.map((_, i) => i).filter((i) => !gone[i]);
   const saveEdit = () => {
     if (keptIdx.some((i) => drafts[i] === "" || !(Number(drafts[i]) >= 0))) { showToast("Enter a valid price for every item.", "err"); return; }
@@ -1657,10 +1670,28 @@ function ReceiptModal({ sale: saleProp, settings, branch, onClose, showToast, on
     if (keptIdx.length + extra.length === 0) { showToast("A receipt must keep at least one item. To cancel the whole sale use Return items.", "err"); return; }
     const changedShape = keptIdx.length !== sale.items.length || extra.length > 0;
     if (changedShape && !canReshape) { showToast("Only the owner can add or delete items, and not after a return.", "err"); return; }
-    const updated = reviseSale(sale, {
-      kept: keptIdx.map((i) => ({ index: i, qty: Number(qtyDrafts[i]), price: Number(drafts[i]), discount: Number(discDrafts[i]) || 0 })),
-      added: extra.map((e) => ({ productId: e.productId, name: e.name, qty: Number(e.qty), price: Number(e.price), discount: Number(e.disc) || 0, cost: e.cost, listPrice: e.listPrice })),
-    });
+    const itemsChanged = changedShape || keptIdx.some((i) => Number(qtyDrafts[i]) !== Number(sale.items[i].qty) || Number(drafts[i]) !== Number(sale.items[i].price) || (Number(discDrafts[i]) || 0) !== lineDiscount(sale.items[i]));
+    const wantType = canMoney ? dType : sale.paymentType;
+    const nameNow = dName.trim();
+    if (wantType === "credit" && !nameNow) { showToast("Enter the customer's name for a credit sale.", "err"); return; }
+    let revised = sale;
+    try {
+      if (itemsChanged) revised = reviseSale(sale, {
+        kept: keptIdx.map((i) => ({ index: i, qty: Number(qtyDrafts[i]), price: Number(drafts[i]), discount: Number(discDrafts[i]) || 0 })),
+        added: extra.map((e) => ({ productId: e.productId, name: e.name, qty: Number(e.qty), price: Number(e.price), discount: Number(e.disc) || 0, cost: e.cost, listPrice: e.listPrice })),
+      });
+      const known = (ctx.customers || []).find((c) => c.name.trim().toLowerCase() === nameNow.toLowerCase() && (!dPhone.trim() || c.phone === dPhone.trim()));
+      let custId = sale.customerId || null;
+      if (known && known.id !== custId && (wantType === "credit" || nameNow.toLowerCase() !== (sale.customerName || "").trim().toLowerCase())) custId = known.id;
+      if (!custId && wantType === "credit") custId = ctx.ensureCustomer(nameNow, dPhone);
+      if (custId && custId === sale.customerId && isAdminLike(ctx) && (nameNow.toLowerCase() !== (sale.customerName || "").trim().toLowerCase() || dPhone.trim() !== (sale.customerPhone || "")) && nameNow) ctx.renameCustomer(custId, nameNow, dPhone.trim());
+      const d = { customerName: nameNow, customerPhone: dPhone.trim(), customerId: custId };
+      if (canMoney) { d.paymentType = dType; d.amountTendered = dType === "credit" ? Number(dPaid) || 0 : revised.amountTendered; d.dueDate = dType === "credit" ? dDue : ""; }
+      var updated = applyDetails(revised, d);
+    } catch (e) {
+      showToast(e && e.message === "invalid_deposit" ? "The amount paid cannot be more than the total." : e && e.message === "customer_required" ? "A credit sale needs the customer's name." : "Could not save the changes.", "err"); return;
+    }
+    if (updated === sale) { setEditing(false); showToast("Nothing was changed."); return; }
     if (!ctx.cloudOn) {
       const diffs = stockDiffs(sale, updated);
       const short = Object.entries(diffs).find(([id, d]) => { const p = (ctx.products || []).find((x) => x.id === id); return d < 0 && p && -d > getStock(p, sale.branchId); });
@@ -1690,7 +1721,7 @@ function ReceiptModal({ sale: saleProp, settings, branch, onClose, showToast, on
   const printBt = () => (printer.address ? thermalPrint((cfg) => buildSale(cfg, sale, settings, branch, money), showToast) : setSetup(true));
   return (
     <>
-      <Modal onClose={editing ? () => setEditing(false) : returning ? () => setReturning(false) : onClose} title={returning ? "Take items back" : editing ? "Edit quantity, price & discount" : viewing ? `Receipt #${sale.invoiceNo}` : isCredit ? "Credit sale recorded" : "Sale complete"}>
+      <Modal onClose={editing ? () => setEditing(false) : returning ? () => setReturning(false) : onClose} title={returning ? "Take items back" : editing ? "Edit receipt" : viewing ? `Receipt #${sale.invoiceNo}` : isCredit ? "Credit sale recorded" : "Sale complete"}>
         {returning ? (
           <>
             <div style={{ fontSize: 13.5, color: colors.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>Choose what the customer is bringing back. The refund is worked out from what they really paid, discounts included.</div>
@@ -1725,7 +1756,7 @@ function ReceiptModal({ sale: saleProp, settings, branch, onClose, showToast, on
           </>
         ) : editing ? (
           <>
-            <div style={{ fontSize: 13.5, color: colors.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>Change the quantity, selling price or discount (₦ off the line) of each item. The owner can also delete an item or add one. Totals and any amount owed are recalculated, and stock follows.</div>
+            <div style={{ fontSize: 13.5, color: colors.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>Change the quantity, selling price or discount (₦ off the line) of each item. The owner can also delete an item or add one. Totals and any amount owed are recalculated, and stock follows. You can also fix the customer name below; the owner can change cash to credit (or back).</div>
             <div style={styles.stack8}>
               {sale.items.map((it, i) => (
                 <div key={i} style={{ background: colors.surface2, borderRadius: 14, padding: 12, opacity: gone[i] ? 0.55 : 1 }}>
@@ -1785,6 +1816,27 @@ function ReceiptModal({ sale: saleProp, settings, branch, onClose, showToast, on
               </div>
             )}
             {!canReshape && isAdminLike(ctx) && <div style={{ fontSize: 12.5, color: colors.inkSoft, marginTop: 8 }}>Items cannot be added or deleted after a return.</div>}
+            <div style={{ background: colors.surface2, borderRadius: 14, padding: 12, marginTop: 12 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>Customer &amp; payment</div>
+              <input style={styles.input} list="rc-customers" autoComplete="off" placeholder={dType === "credit" ? "Customer name (required)" : "Customer name (optional)"} aria-label="Customer name" value={dName} onChange={(e) => setDName(e.target.value)} />
+              <datalist id="rc-customers">{(ctx.customers || []).slice(0, 200).map((c) => <option key={c.id} value={c.name}>{c.phone || ""}</option>)}</datalist>
+              <input style={{ ...styles.input, marginTop: 8 }} type="tel" inputMode="tel" placeholder="Phone (optional)" aria-label="Customer phone" value={dPhone} onChange={(e) => setDPhone(e.target.value)} />
+              {canMoney ? (<>
+                <div style={{ marginTop: 10 }}><Segmented value={dType} onChange={(v) => { setDType(v); if (v === "credit" && dPaid === "") setDPaid("0"); }} options={[["cash", "Paid in full"], ["credit", "On credit"]]} /></div>
+                {dType === "credit" && (<>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+                    <span style={{ color: colors.inkSoft, fontSize: 13.5, whiteSpace: "nowrap" }}>Paid so far ₦</span>
+                    <input style={styles.input} type="number" inputMode="decimal" step="0.01" min="0" aria-label="Amount paid so far" value={dPaid} onChange={(e) => setDPaid(e.target.value)} />
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+                    <span style={{ color: colors.inkSoft, fontSize: 13.5, whiteSpace: "nowrap" }}>Pay by</span>
+                    <input style={styles.input} type="date" aria-label="Payment due date" value={dDue} onChange={(e) => setDDue(e.target.value)} />
+                  </div>
+                  <div style={{ fontSize: 13, marginTop: 8 }}>Will be owed on this receipt: <b className="num">{money(Math.max(0, draftTotal - (Number(dPaid) || 0)))}</b></div>
+                </>)}
+                {dType !== (isCredit ? "credit" : "cash") && <div style={{ fontSize: 12.5, color: colors.inkSoft, marginTop: 6 }}>{dType === "credit" ? "This receipt becomes a credit sale and the balance is added to the customer's debt." : "This receipt becomes fully paid and is taken off the customer's debt."}</div>}
+              </>) : isAdminLike(ctx) ? <div style={{ fontSize: 12.5, color: colors.inkSoft, marginTop: 8 }}>Payment type cannot be changed after a return.</div> : <div style={{ fontSize: 12.5, color: colors.inkSoft, marginTop: 8 }}>Only the owner can change the payment type.</div>}
+            </div>
             <div className="sheet-actions">
               <Button variant="secondary" onClick={() => setEditing(false)}>Cancel</Button>
               <Button icon={Check} onClick={saveEdit}>Save changes</Button>
@@ -1798,6 +1850,14 @@ function ReceiptModal({ sale: saleProp, settings, branch, onClose, showToast, on
             <div style={{ fontSize: 13 }}>{isCredit ? `${money(sale.balanceDue)} still owed` : sale.amountTendered > sale.total ? `Change due ${money(sale.amountTendered - sale.total)}` : "Paid in cash"}</div>
           </div>
         </div>
+        {sale.edited && (
+          <div style={{ background: colors.surface2, borderRadius: 12, padding: "8px 12px", marginBottom: 10, fontSize: 12.5, lineHeight: 1.5 }}>
+            <b>Edited receipt</b>{sale.editedAt ? ` · last changed ${new Date(sale.editedAt).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}
+            {(Array.isArray(sale.revisions) ? sale.revisions.slice(-4) : []).map((r, k) => (
+              <div key={k} style={{ color: colors.inkSoft }}>{new Date(r.at).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}{r.delta ? ` · total ${r.delta > 0 ? "+" : "−"}${money(Math.abs(r.delta))}` : ""}{r.added && r.added.length ? ` · added ${r.added.join(", ")}` : ""}{r.removed && r.removed.length ? ` · removed ${r.removed.join(", ")}` : ""}{r.details && r.details.length ? ` · changed ${r.details.join(", ")}` : ""}</div>
+            ))}
+          </div>
+        )}
         <div id="printable-receipt" className="force-light" style={{ ...styles.receiptPrintArea, ...(isCredit ? styles.creditPrintArea : {}) }}>
           <div style={styles.invoiceShopName}>{settings.shopName}</div>
           {settings.tagline && <div style={styles.invoiceTagline}>({settings.tagline})</div>}
@@ -1841,6 +1901,7 @@ function ReceiptModal({ sale: saleProp, settings, branch, onClose, showToast, on
           {saleRefunded(sale) > 0 && <><div style={{ ...styles.receiptSubRow, fontSize: 11.5, color: colors.red }}><span>Returned by customer</span><span style={styles.mono}>−{money(saleRefunded(sale))}</span></div><div style={{ ...styles.receiptSubRow, fontSize: 12, fontWeight: 700 }}><span>Net after returns</span><span style={styles.mono}>{money(saleNet(sale))}</span></div>{saleReturns(sale).map((r) => <div key={r.id} style={{ fontSize: 10.5, color: colors.inkSoft, marginTop: 2 }}>{r.date}: {r.items.map((i) => `${i.qty}× ${i.name}`).join(", ")}{r.reason ? ` (${r.reason})` : ""}</div>)}</>}
           <div style={{ ...styles.receiptSubRow, fontSize: 11.5 }}><span>{isCredit ? "Deposit Paid" : "Payment: Cash"}</span><span style={styles.mono}>{money(sale.amountTendered)}</span></div>
           <div style={{ ...styles.receiptSubRow, ...(isCredit ? { color: colors.red, fontWeight: 700 } : {}) }}><span>{isCredit ? "AMOUNT OWED" : "Balance"}</span><span style={styles.mono}>{money(sale.balanceDue)}</span></div>
+          {Number(sale.prevBalance) > 0 && <><div style={{ ...styles.receiptSubRow, fontSize: 11.5 }}><span>Owed from before</span><span style={styles.mono}>{money(sale.prevBalance)}</span></div><div style={{ ...styles.receiptSubRow, color: colors.red, fontWeight: 700 }}><span>TOTAL OWED NOW</span><span style={styles.mono}>{money(Number(sale.prevBalance) + Number(sale.balanceDue || 0))}</span></div></>}
           <div style={styles.receiptDivider} />
           <div style={styles.signatureRow}>
             <span>Customer Sign: __________</span>
@@ -2048,6 +2109,7 @@ function Checkout({ products, setProducts, sales, setSales, customers, setCustom
   const totalCost = cart.reduce((a, i) => a + i.cost * i.qty, 0);
   const profit = round2(total - totalCost);
   const setLineDisc = (id, patch) => setCart((c) => c.map((i) => (i.id === id ? { ...i, discEntry: { mode: "amt", text: "", ...(i.discEntry || {}), ...patch } } : i)));
+  const checkoutCtx = React.useContext(AppCtx);
   const matchedCustomer = useMemo(() => { const n = customerName.trim().toLowerCase(); return n ? customers.find((c) => c.name.trim().toLowerCase() === n && (!customerPhone.trim() || !c.phone || c.phone === customerPhone.trim())) || null : null; }, [customers, customerName, customerPhone]);
   // A customer with a standing discount gets it filled in automatically; the cashier can still change or clear it.
   useEffect(() => {
@@ -2122,6 +2184,7 @@ function Checkout({ products, setProducts, sales, setSales, customers, setCustom
       dueDate: paymentType === "credit" ? dueDate : "",
       amountTendered: tendered,
       balanceDue,
+      prevBalance: customerId ? checkoutCtx.owedBy(customerId) : 0,
       items: priced.lines.map((i) => ({ productId: i.id, name: i.name, qty: i.qty, price: i.price, discount: i.discount, cost: i.cost })),
       total,
       cost: totalCost,
@@ -2339,6 +2402,7 @@ function Checkout({ products, setProducts, sales, setSales, customers, setCustom
             <div style={{ ...styles.checkoutFields, marginTop: 12 }}>
               <input style={styles.input} list="co-customers" autoComplete="off" placeholder={isCredit ? "Customer name (required)" : "Customer name (optional)"} value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
               <datalist id="co-customers">{customers.slice(0, 200).map((c) => <option key={c.id} value={c.name}>{Number(c.discountPct) > 0 ? `${c.discountPct}% regular discount` : c.phone || ""}</option>)}</datalist>
+              {matchedCustomer && checkoutCtx.owedBy(matchedCustomer.id) > 0 && <div style={{ fontSize: 13, color: colors.red, fontWeight: 700, background: colors.redSoft, borderRadius: 10, padding: "8px 10px" }}>{matchedCustomer.name} still owes {money(checkoutCtx.owedBy(matchedCustomer.id))} from before. It will be shown on this receipt.</div>}
               {matchedCustomer && Number(matchedCustomer.discountPct) > 0 && <div style={{ fontSize: 13, color: colors.green, fontWeight: 600 }}>Regular customer: {matchedCustomer.discountPct}% discount applied (you can change it below).</div>}
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ fontSize: 13.5, fontWeight: 600, whiteSpace: "nowrap" }}>Whole-sale discount</span>
@@ -2864,6 +2928,7 @@ function CreditBook({ customers, setCustomers, sales, creditPayments, setCreditP
 // ---------- sales history / reports ----------
 // ---------- sales history: look at, reprint and (within the rules) correct past sales ----------
 function SalesHistory({ sales, setSales, currentUser, isAdmin, branches, multiBranch, settings, showToast, activeBranchId }) {
+  const [onlyEdited, setOnlyEdited] = useState(false);
   const today = todayStr();
   const dayOffset = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return localDateStr(d); };
   const [range, setRange] = useState("today");
@@ -2881,17 +2946,20 @@ function SalesHistory({ sales, setSales, currentUser, isAdmin, branches, multiBr
   const mine = (s) => (s.cashierId ? s.cashierId === currentUser.id : s.cashierName === currentUser.name);
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return sales.filter((s) => (isAdmin || mine(s)) && s.date >= from && s.date <= to && (branchFilter === "all" || s.branchId === branchFilter)
+    const editedDay = (s) => (s.edited && s.editedAt ? new Date(s.editedAt).toLocaleDateString("en-CA") : "");
+    return sales.filter((s) => (isAdmin || mine(s)) && ((s.date >= from && s.date <= to) || (editedDay(s) >= from && editedDay(s) <= to && editedDay(s) !== "")) && (!onlyEdited || s.edited) && (branchFilter === "all" || s.branchId === branchFilter)
       && (!needle || (s.customerName || "").toLowerCase().includes(needle) || String(s.invoiceNo).toLowerCase().includes(needle) || (s.items || []).some((i) => i.name.toLowerCase().includes(needle))))
       .sort((a, b) => (a.time < b.time ? 1 : -1));
-  }, [sales, from, to, q, branchFilter, isAdmin, currentUser]);
-  const sum = rows.reduce((a, s) => a + saleNet(s), 0);
-  const disc = rows.reduce((a, s) => a + saleDiscount(s.items), 0);
+  }, [sales, from, to, q, branchFilter, isAdmin, currentUser, onlyEdited]);
+  const inRange = rows.filter((s) => s.date >= from && s.date <= to);
+  const sum = inRange.reduce((a, s) => a + saleNet(s), 0);
+  const disc = inRange.reduce((a, s) => a + saleDiscount(s.items), 0);
   const viewSale = viewId ? sales.find((s) => s.id === viewId) : null;
   return (
     <div style={styles.stack}>
       <div className="chips" style={{ margin: 0, padding: 0 }}>
         {[["today", "Today"], ["yesterday", "Yesterday"], ["week", "7 days"], ["custom", "Pick dates"]].map(([k, l]) => <button key={k} type="button" className={"chip" + (range === k ? " on" : "")} onClick={() => pick(k)}>{l}</button>)}
+        <button type="button" className={"chip" + (onlyEdited ? " on" : "")} onClick={() => setOnlyEdited(!onlyEdited)}>Edited only</button>
       </div>
       {range === "custom" && (
         <div style={styles.formGrid2}>

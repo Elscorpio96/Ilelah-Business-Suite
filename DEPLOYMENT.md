@@ -170,3 +170,10 @@ The same app, in a Windows 10/11 desktop shell (Electron). One program contains 
 
 ## 19. Signing key (read this)
 Phones only accept an in-place update when the APK is signed with the SAME key as the installed app. The key lives in the four GitHub secrets (KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD). Keep the original `.jks` file and passwords in at least two safe places.
+
+## 20. v1.18: edit customer & payment on a receipt, old debt shown on new receipts (migration 0012)
+* **Edit sale** now also has **Customer & payment**. Anyone allowed to edit a sale can fix the customer **name and phone**. The **owner** can also change **Paid in full ↔ On credit**, the amount paid so far and the pay-by date (for a credit sale printed as cash by mistake). Credit needs a customer name; the amount paid cannot be more than the total. Not allowed after a return.
+* Changing cash → credit adds the unpaid part to the customer's debt; credit → cash clears it. Renaming a customer on a receipt (owner) also renames the customer in the customer list.
+* **Old debt on new purchases:** when the customer typed at checkout already owes money, a red note shows "still owes ₦X from before", and the receipt (screen, text, image, Bluetooth print) shows "Owed from before" and "TOTAL OWED NOW". The figure is saved on the receipt on the phone that made the sale.
+* **History:** a receipt edited today now also appears under Today (even if sold earlier), there is an **Edited only** filter, and an opened receipt lists what was changed and when.
+* **Cloud mode:** run `supabase/migrations/0012_edit_sale_details.sql` once in the SQL Editor (after 0011) **before** installing the new app on phones. Safe to run twice. Other phones pick the edit up on their next sync.
