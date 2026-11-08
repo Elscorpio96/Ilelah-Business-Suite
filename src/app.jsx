@@ -2488,11 +2488,19 @@ function Purchases({ products, setProducts, purchases, setPurchases, showToast, 
     return { ok: true, text: `${match.name}  (x${newQty})` };
   };
 
-  const openAdd = () => setForm({ supplier: "", date: todayStr(), lines: [{ productId: products[0]?.id || "", qty: "", cost: "" }] });
+  const [pq, setPq] = useState("");
+  const openAdd = () => { setPq(""); setForm({ supplier: "", date: todayStr(), lines: [] }); };
   const close = () => setForm(null);
-  const addLine = () => setForm({ ...form, lines: [...form.lines, { productId: products[0]?.id || "", qty: "", cost: "" }] });
+  // Tap an item to add 1 (tap again for more), like the Sell page.
+  const tapAdd = (p) => setForm((f) => {
+    const ex = f.lines.findIndex((l) => l.productId === p.id);
+    if (ex >= 0) return { ...f, lines: f.lines.map((l, i) => (i === ex ? { ...l, qty: String((Number(l.qty) || 0) + 1) } : l)) };
+    return { ...f, lines: [...f.lines, { productId: p.id, qty: "1", cost: String(p.cost || "") }] };
+  });
   const updateLine = (idx, patch) => setForm({ ...form, lines: form.lines.map((l, i) => (i === idx ? { ...l, ...patch } : l)) });
+  const stepLine = (idx, d) => { const q = Math.max(0, (Number(form.lines[idx].qty) || 0) + d); if (q === 0) removeLine(idx); else updateLine(idx, { qty: String(q) }); };
   const removeLine = (idx) => setForm({ ...form, lines: form.lines.filter((_, i) => i !== idx) });
+  const pickList = (() => { const q = pq.trim().toLowerCase(); const all = [...products].sort((a, b) => a.name.localeCompare(b.name)); return q ? all.filter((p) => p.name.toLowerCase().includes(q) || (p.sku || "").toLowerCase().includes(q) || (p.barcode || "") === pq.trim()) : all; })();
   const total = (form?.lines || []).reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.cost) || 0), 0);
 
   const save = () => {
@@ -2565,26 +2573,46 @@ function Purchases({ products, setProducts, purchases, setPurchases, showToast, 
               <input style={styles.input} type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
             </Field>
           </div>
-          <div style={{ ...styles.fieldLabel, margin: "18px 0 8px" }}>Items received</div>
+          <div style={{ ...styles.fieldLabel, margin: "18px 0 8px" }}>Tap each item that arrived</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ ...styles.searchBox, flex: 1 }}><Search size={18} /><input style={styles.searchInput} placeholder="Search item or SKU" aria-label="Search item to receive" value={pq} onChange={(e) => setPq(e.target.value)} /></div>
+            <Button variant="secondary" icon={ScanBarcode} small onClick={() => setScanning(true)}>Scan</Button>
+          </div>
+          <div style={{ maxHeight: 230, overflowY: "auto", marginTop: 8 }}>
+            {pickList.length === 0 ? <div style={{ fontSize: 13, color: colors.inkSoft, padding: 10 }}>No item matches. Add it in Inventory first.</div> : (
+              <List>
+                {pickList.map((p) => {
+                  const inPo = (form.lines.find((l) => l.productId === p.id) || {}).qty || 0;
+                  return <Row key={p.id} onClick={() => tapAdd(p)} lead={inPo ? <b>{inPo}</b> : <Plus size={20} />} leadTone={inPo ? { background: colors.primary, color: "var(--on-primary)" } : null}
+                    title={p.name} sub={`${getStock(p, activeBranchId)} in stock${p.sku ? " · " + p.sku : ""}`} value={money(p.cost || 0)} />;
+                })}
+              </List>
+            )}
+          </div>
+          <div style={{ ...styles.fieldLabel, margin: "18px 0 8px" }}>Items received ({form.lines.length})</div>
           <div style={styles.stack8}>
-            {form.lines.map((l, idx) => (
-              <div key={idx} style={{ background: colors.surface2, borderRadius: 14, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <select style={{ ...styles.input, flex: 1 }} value={l.productId} onChange={(e) => updateLine(idx, { productId: e.target.value })} aria-label="Product">
-                    {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                  {form.lines.length > 1 && <IconButton icon={Trash2} danger label="Remove line" style={{ width: 46, height: 46 }} onClick={() => removeLine(idx)} />}
+            {form.lines.length === 0 && <div style={{ fontSize: 13, color: colors.inkSoft }}>Nothing added yet. Tap items above, or scan them.</div>}
+            {form.lines.map((l, idx) => {
+              const pr = products.find((pp) => pp.id === l.productId);
+              return (
+                <div key={l.productId} style={{ background: colors.surface2, borderRadius: 14, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ fontWeight: 600, fontSize: 14.5, minWidth: 0 }}>{pr ? pr.name : "Unknown item"}</div>
+                    <IconButton icon={Trash2} danger label={`Remove ${pr ? pr.name : "line"}`} size={16} onClick={() => removeLine(idx)} />
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <div className="stepper">
+                      <button type="button" aria-label="Decrease quantity" onClick={() => stepLine(idx, -1)}><Minus size={16} /></button>
+                      <input className="num" type="number" inputMode="numeric" min="1" aria-label="Quantity" value={l.qty} onChange={(e) => updateLine(idx, { qty: e.target.value })} onFocus={(e) => e.target.select()} />
+                      <button type="button" aria-label="Increase quantity" onClick={() => stepLine(idx, 1)}><Plus size={16} /></button>
+                    </div>
+                    <span style={{ color: colors.inkSoft, fontSize: 13 }}>×</span>
+                    <input style={styles.input} type="number" inputMode="decimal" step="0.01" placeholder="Cost each" aria-label="Cost per unit" value={l.cost} onChange={(e) => updateLine(idx, { cost: e.target.value })} onFocus={(e) => e.target.select()} />
+                    <span className="num" style={{ fontWeight: 700, minWidth: 80, textAlign: "right" }}>{money((Number(l.qty) || 0) * (Number(l.cost) || 0))}</span>
+                  </div>
                 </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input style={styles.input} type="number" inputMode="numeric" placeholder="Qty" aria-label="Quantity" value={l.qty} onChange={(e) => updateLine(idx, { qty: e.target.value })} />
-                  <input style={styles.input} type="number" inputMode="decimal" step="0.01" placeholder="Cost per unit" aria-label="Cost per unit" value={l.cost} onChange={(e) => updateLine(idx, { cost: e.target.value })} />
-                </div>
-              </div>
-            ))}
-            <div style={{ display: "flex", gap: 8 }}>
-              <Button variant="secondary" icon={Plus} small onClick={addLine} style={{ flex: 1 }}>Add line</Button>
-              <Button variant="secondary" icon={ScanBarcode} small onClick={() => setScanning(true)} style={{ flex: 1 }}>Scan items</Button>
-            </div>
+              );
+            })}
           </div>
           {scanning && <ScannerModal title="Scan delivery" continuous onDetect={scanLine} onClose={() => setScanning(false)} summary={`${(form.lines || []).filter((l) => l.qty !== "").length} products`} />}
           <div style={{ ...styles.poTotal, marginTop: 14 }}><span>Order total</span><span className="num">{money(total)}</span></div>
