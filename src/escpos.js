@@ -106,6 +106,7 @@ export function saleReceipt(sale, settings, branch, { width = 32, money }) {
     if (Number(sale.amountTendered) > Number(sale.total)) e.lr("Change", m(Number(sale.amountTendered) - Number(sale.total)));
     else if (Number(sale.balanceDue) > 0) e.lr("Balance", m(sale.balanceDue));
   }
+  if (Number(sale.prevBalance) > 0) { e.lr("Owed from before", m(sale.prevBalance)); e.bold(true).lr("TOTAL OWED NOW", m(Number(sale.prevBalance) + Number(sale.balanceDue || 0))).bold(false); }
   e.hr();
   e.wrap(credit ? "Goods released on credit. Balance must be settled as agreed." : "Received the above goods in good condition.");
   e.wrap("No refund of money after payment.");

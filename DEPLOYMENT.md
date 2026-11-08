@@ -162,3 +162,19 @@ The same app, in a Windows 10/11 desktop shell (Electron). One program contains 
 * **Stock:** a deleted item goes back on the shelf, an added item comes off it (Local mode refuses an added quantity above what is in stock).
 * **Money:** the screen shows the difference before saving. Cash sale: "customer must pay ₦X more" or "give the customer back ₦X". Credit sale: the amount owed goes up or down by the difference. The receipt shows an **Edited** badge.
 * **Cloud mode:** run `supabase/migrations/0011_revise_sale_lines.sql` once in the SQL Editor (after 0010) **before** installing the new app on phones. Every change is written to the stock ledger and the audit log. Only an owner/admin login is accepted by the server.
+
+## 18. Backup: "Save backup to this phone" (Android) 
+* Settings → Backup now has **Save backup to this phone**, which opens Android's own file picker so the shop chooses the folder (Downloads, Documents, SD card) and the name. No permission is needed. **Share backup** (WhatsApp, Drive, e-mail) is still there as the second button. On a PC it is a normal download.
+* The "Switch to Cloud mode" step 1 also uses the file picker. It only counts as backed up once the file was actually saved.
+* New native file: `android/app/src/main/java/com/tally/shopledger/TallyFilesPlugin.java` (registered in MainActivity). It could not be compiled on the machine that wrote it: if the Android build fails, the red lines will be in that file.
+
+## 19. Signing key (read this)
+Phones only accept an in-place update when the APK is signed with the SAME key as the installed app. The key lives in the four GitHub secrets (KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD). Keep the original `.jks` file and passwords in at least two safe places.
+
+## 20. v1.18: edit customer & payment on a receipt, old debt shown on new receipts (migration 0012)
+* **Edit sale** now also has **Customer & payment**. Anyone allowed to edit a sale can fix the customer **name and phone**. The **owner** can also change **Paid in full ↔ On credit**, the amount paid so far and the pay-by date (for a credit sale printed as cash by mistake). Credit needs a customer name; the amount paid cannot be more than the total. Not allowed after a return.
+* Changing cash → credit adds the unpaid part to the customer's debt; credit → cash clears it. Renaming a customer on a receipt (owner) also renames the customer in the customer list.
+* **Old debt on new purchases:** when the customer typed at checkout already owes money, a red note shows "still owes ₦X from before", and the receipt (screen, text, image, Bluetooth print) shows "Owed from before" and "TOTAL OWED NOW". The figure is saved on the receipt on the phone that made the sale.
+* **History:** a receipt edited today now also appears under Today (even if sold earlier), there is an **Edited only** filter, and an opened receipt lists what was changed and when.
+* **Cloud mode:** run `supabase/migrations/0012_edit_sale_details.sql` once in the SQL Editor (after 0011) **before** installing the new app on phones. Safe to run twice. Other phones pick the edit up on their next sync.
+* **Purchases (v1.18):** New purchase order now works like the Sell page: search or tap each item that arrived (tap again to add more), then adjust with the − / + stepper and the cost each. Scan still adds 1 per scan. No database change.

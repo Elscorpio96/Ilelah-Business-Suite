@@ -55,3 +55,35 @@ export function stockDiffs(oldSale, newSale) {
   for (const id of new Set([...Object.keys(a), ...Object.keys(b)])) { const d = Math.round(((a[id] || 0) - (b[id] || 0)) * 1000) / 1000; if (d) out[id] = d; }
   return out;
 }
+
+// Correct the details of a finished receipt. Name and phone: anyone allowed to edit the sale.
+// Payment type, amount paid, customer and due date: the owner only (the screen and the server both enforce it).
+export function applyDetails(sale, d, now = new Date()) {
+  const name = d.customerName !== undefined ? String(d.customerName).trim() : sale.customerName || "";
+  const phone = d.customerPhone !== undefined ? String(d.customerPhone).trim() : sale.customerPhone || "";
+  const type = d.paymentType || sale.paymentType;
+  let customerId = d.customerId !== undefined ? d.customerId : sale.customerId || null;
+  let amountTendered = d.amountTendered !== undefined ? Number(d.amountTendered) : sale.amountTendered;
+  let dueDate = d.dueDate !== undefined ? d.dueDate || "" : sale.dueDate || "";
+  let balanceDue;
+  if (type === "credit") {
+    if (!name) throw new Error("customer_required");
+    if (!customerId) throw new Error("customer_required");
+    if (!(amountTendered >= 0) || amountTendered > sale.total) throw new Error("invalid_deposit");
+    balanceDue = round2(sale.total - amountTendered);
+  } else {
+    if (!(amountTendered >= sale.total)) amountTendered = sale.total;
+    balanceDue = 0; dueDate = "";
+  }
+  const changed = [];
+  if (name !== (sale.customerName || "")) changed.push("customer name");
+  if (phone !== (sale.customerPhone || "")) changed.push("phone");
+  if (type !== sale.paymentType) changed.push(type === "credit" ? "cash → credit" : "credit → cash");
+  else if (amountTendered !== sale.amountTendered) changed.push("amount paid");
+  if ((dueDate || "") !== (sale.dueDate || "")) changed.push("due date");
+  if (customerId !== (sale.customerId || null) && type === "credit") changed.push("customer");
+  if (!changed.length) return sale;
+  const revisions = [...(Array.isArray(sale.revisions) ? sale.revisions : []), { at: now.toISOString(), delta: 0, added: [], removed: [], details: changed }];
+  return { ...sale, customerName: name, customerPhone: phone, customerId, paymentType: type, amountTendered, balanceDue, dueDate, revisions, edited: true, editedAt: now.toISOString() };
+}
+export const moneyDetailsChanged = (a, b) => a.paymentType !== b.paymentType || (a.customerId || null) !== (b.customerId || null) || a.amountTendered !== b.amountTendered || (a.dueDate || "") !== (b.dueDate || "");

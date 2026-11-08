@@ -39,6 +39,7 @@ export function buildReceiptRows(sale, settings, branch, money) {
   rows.push({ k: "pair", l: credit ? "Deposit Paid" : "Payment: Cash", r: money(sale.amountTendered) });
   if (!credit && sale.amountTendered > sale.total) rows.push({ k: "pair", l: "Change", r: money(sale.amountTendered - sale.total) });
   rows.push({ k: "pair", l: credit ? "AMOUNT OWED" : "Balance", r: money(sale.balanceDue), color: credit ? "#DC2626" : null, boldRow: credit });
+  if (Number(sale.prevBalance) > 0) { rows.push({ k: "pair", l: "Owed from before", r: money(sale.prevBalance) }); rows.push({ k: "pair", l: "TOTAL OWED NOW", r: money(Number(sale.prevBalance) + Number(sale.balanceDue || 0)), color: "#DC2626", boldRow: true }); }
   rows.push({ k: "divider" });
   rows.push({ k: "small", t: credit ? "Goods released on credit. Balance must be settled as agreed. No refund of money after payment." : "Received the above goods in good condition. No refund of money after payment.", center: true });
   rows.push({ k: "gap", h: 14 });

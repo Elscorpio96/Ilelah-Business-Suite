@@ -1,6 +1,6 @@
 ; Ilelah Business Suite - Windows installer (per-user, no admin rights needed)
 !define APP "Ilelah Business Suite"
-!define VER "1.17.0"
+!define VER "1.18.0"
 !define EXE "Ilelah Business Suite.exe"
 !include "MUI2.nsh"
 Name "${APP}"
@@ -22,7 +22,7 @@ SetCompressor /SOLID lzma
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
-VIProductVersion "1.17.0.0"
+VIProductVersion "1.18.0.0"
 VIAddVersionKey "ProductName" "${APP}"
 VIAddVersionKey "CompanyName" "Ilelah Technologies"
 VIAddVersionKey "FileDescription" "${APP} Setup"

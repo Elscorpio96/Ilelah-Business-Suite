@@ -244,7 +244,7 @@ export function CloudPanel({ showToast, fullState, onBackup }) {
               {sw.backedUp ? (
                 <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 13.5, lineHeight: 1.45 }}>
                   <input type="checkbox" checked={!!sw.savedFile} onChange={(e) => patch({ savedFile: e.target.checked })} style={{ marginTop: 3 }} />
-                  <span>I saved the backup file somewhere safe (Drive, WhatsApp, e-mail or Files). A second copy is also kept inside this app.</span>
+                  <span>I saved the backup file somewhere safe (on this phone, Drive, WhatsApp or e-mail). A second copy is also kept inside this app.</span>
                 </label>
               ) : null}
               <div className="sheet-actions"><Button variant="secondary" onClick={() => setSw(null)}>Cancel</Button><Button disabled={!sw.backedUp || !sw.savedFile} onClick={doCompare}>2. Compare with cloud</Button></div>

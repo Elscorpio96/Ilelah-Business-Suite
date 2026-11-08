@@ -35,7 +35,7 @@ const prod = async (sku, price) => (await as("owner", "insert into products(shop
 const A = await prod("A", 1000), B = await prod("B", 500); await rpc("owner", "adjust_stock", br, A, 100, "r"); await rpc("owner", "adjust_stock", br, B, 100, "r");
 const dev = await rpc("joy", "register_device", br, "d");
 const mk = (items, extra = {}) => ({ id: uuid(), branch_id: br, device_id: dev.device_id, invoice_no: "I-" + uuid().slice(0, 8), sold_at: new Date().toISOString(), payment_method: "cash", items, ...extra });
-const row = async (id) => (await as("super", "select total, subtotal, discount_total, amount_paid, balance_due, edited_by from sales where id=$1", [id])).rows[0];
+const row = async (id) => (await as("super", "select total, subtotal, discount_total, amount_paid, balance_due, edited_by, customer_id, customer_name, customer_phone, payment_method, due_date::text as due_date from sales where id=$1", [id])).rows[0];
 const num = (x) => Number(x);
 
 // 1. a cashier gives a discount at checkout
@@ -118,4 +118,24 @@ eq("credit sale: the amount owed follows the new total", [num(r.total), num(r.am
 const s7 = mk([{ product_id: A, qty: 3, unit_price: 1000 }, { product_id: B, qty: 1, unit_price: 500 }]); await rpc("joy", "record_sale", s7);
 await rpc("owner", "refund_sale", s7.id, [{ product_id: B, qty: 1 }], true, "bad", null);
 await denied("no adding or deleting after a return", () => rpc("owner", "revise_sale", s7.id, [{ product_id: A, qty: 3, unit_price: 1000 }], "x"), /sale_not_editable/);
+
+// 6. receipt details: customer name, cash <-> credit, amount paid (0012)
+const cust2 = uuid();
+const s8 = mk([{ product_id: A, qty: 2, unit_price: 1000 }]); await rpc("joy", "record_sale", s8);     // a cash sale
+await rpc("joy", "edit_sale_details", s8.id, { customer_name: "Musa B.", customer_phone: "0803" }, "typo in name"); r = await row(s8.id);
+eq("a cashier fixes the name on their own sale today", [r.customer_name, r.customer_phone, r.payment_method], ["Musa B.", "0803", "cash"]);
+await denied("a cashier cannot turn cash into credit", () => rpc("joy", "edit_sale_details", s8.id, { payment_method: "credit", customer_id: cust2, customer_name: "Musa", amount_paid: 0 }, "x"), /admin_required/);
+await denied("a reason is required", () => rpc("owner", "edit_sale_details", s8.id, { customer_name: "X" }, " "), /reason_required/);
+await denied("credit needs a customer", () => rpc("owner", "edit_sale_details", s8.id, { payment_method: "credit", amount_paid: 0 }, "x"), /customer_required/);
+await denied("deposit cannot be more than the total", () => rpc("owner", "edit_sale_details", s8.id, { payment_method: "credit", customer_id: cust2, customer_name: "Musa", amount_paid: 9999 }, "x"), /invalid_deposit/);
+await rpc("owner", "edit_sale_details", s8.id, { payment_method: "credit", customer_id: cust2, customer_name: "Musa", customer_phone: "0803", amount_paid: 500, due_date: "2026-12-01" }, "printed as cash by mistake"); r = await row(s8.id);
+eq("cash sale corrected to credit", [r.payment_method, r.customer_id, num(r.amount_paid), num(r.balance_due), r.due_date], ["credit", cust2, 500, 1500, "2026-12-01"]);
+eq("the customer now owes it", num((await as("owner", "select balance from get_customer_balances() where customer_id=$1", [cust2])).rows[0].balance), 1500);
+await rpc("owner", "edit_sale_details", s8.id, { payment_method: "cash" }, "paid after all"); r = await row(s8.id);
+eq("credit corrected back to cash: nothing owed", [r.payment_method, num(r.amount_paid), num(r.balance_due), r.due_date], ["cash", 2000, 0, null]);
+eq("audit entries written", num((await as("super", "select count(*) c from audit_log where action='sale.edit_details' and entity_id=$1", [s8.id])).rows[0].c), 3);
+eq("sync cursor moved so other phones pull the edit", (await as("super", "select edited_at is not null as e, synced_at >= edited_at as s from sales where id=$1", [s8.id])).rows[0], { e: true, s: true });
+const s9 = mk([{ product_id: A, qty: 3, unit_price: 1000 }, { product_id: B, qty: 1, unit_price: 500 }]); await rpc("joy", "record_sale", s9);
+await rpc("owner", "refund_sale", s9.id, [{ product_id: B, qty: 1 }], true, "bad", null);
+await denied("no payment change after a return", () => rpc("owner", "edit_sale_details", s9.id, { payment_method: "credit", customer_id: cust2, customer_name: "Musa", amount_paid: 0 }, "x"), /sale_not_editable/);
 console.log(`${pass} passed, ${fail} failed`); if (fail) process.exit(1);

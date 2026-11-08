@@ -13,6 +13,8 @@ export function branchCode(name, takenCodes = []) {
 }
 const productRow = (p, shopId) => ({ id: p.id, shop_id: shopId, name: p.name, sku: p.sku, barcode: p.barcode || "", category: p.category || "", cost: num(p.cost), price: num(p.price), low_stock: num(p.lowStock), quick: !!p.quick });
 
+const itemSig = (x) => (x.items || []).map((i) => [i.productId, num(i.qty), num(i.price), num(i.discount)].join(":")).sort().join("|");
+const detailSig = (x) => [x.paymentType === "credit" ? "credit" : "cash", x.customerId || "", x.customerName || "", x.customerPhone || "", num(x.amountTendered), x.dueDate || ""].join("~");
 export function deriveOps(name, prev, next, ctx, uuid, tag) {
   const out = []; const P = byId(Array.isArray(prev) ? prev : []), N = byId(Array.isArray(next) ? next : []);
   switch (name) {
@@ -25,7 +27,8 @@ export function deriveOps(name, prev, next, ctx, uuid, tag) {
           for (const r of s.returns) if (!known.has(r.id)) out.push(rpc("refund:" + r.id, "refund_sale", { p_sale: s.id, p_items: r.items.map((i) => ({ product_id: i.productId, qty: num(i.qty) })), p_restock: !!r.restock, p_reason: r.reason || "Customer return", p_request: r.id }));
         }
         else if (s.edited && s.editedAt !== old.editedAt && (s.items || []).map((i) => i.productId).sort().join() !== (old.items || []).map((i) => i.productId).sort().join()) out.push(rpc(`revise:${s.id}:${s.editedAt}`, "revise_sale", { p_sale: s.id, p_lines: (s.items || []).map((i) => ({ product_id: i.productId, qty: num(i.qty), unit_price: num(i.price), discount: num(i.discount) })), p_reason: "Items added or removed on the phone" }));
-        else if (s.edited && s.editedAt !== old.editedAt) out.push(rpc(`edit:${s.id}:${s.editedAt}`, "edit_sale_prices", { p_sale: s.id, p_prices: (s.items || []).map((i) => ({ product_id: i.productId, qty: num(i.qty), unit_price: num(i.price), discount: num(i.discount) })), p_reason: "Quantity, price or discount corrected on the phone" }));
+        else if (s.edited && s.editedAt !== old.editedAt && (itemSig(s) !== itemSig(old) || detailSig(s) === detailSig(old))) out.push(rpc(`edit:${s.id}:${s.editedAt}`, "edit_sale_prices", { p_sale: s.id, p_prices: (s.items || []).map((i) => ({ product_id: i.productId, qty: num(i.qty), unit_price: num(i.price), discount: num(i.discount) })), p_reason: "Quantity, price or discount corrected on the phone" }));
+        if (old && s.edited && s.editedAt !== old.editedAt && detailSig(s) !== detailSig(old)) out.push(rpc(`details:${s.id}:${s.editedAt}`, "edit_sale_details", { p_sale: s.id, p_details: { payment_method: s.paymentType === "credit" ? "credit" : "cash", customer_id: s.customerId || "", customer_name: s.customerName || "", customer_phone: s.customerPhone || "", amount_paid: num(s.amountTendered), due_date: s.dueDate || "" }, p_reason: "Receipt details corrected on the phone" }));
       }
       break;
     case "creditPayments": for (const p of next) if (!P.has(p.id)) out.push(rpc("pay:" + p.id, "record_credit_payment", { p: creditPaymentToPayload(p, ctx) })); break;
