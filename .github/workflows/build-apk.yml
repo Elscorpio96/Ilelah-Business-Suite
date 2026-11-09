@@ -35,9 +35,10 @@ jobs:
           npm run build:web
           npx cap sync android
 
-      # Every run gets a higher versionCode, so phones always accept it as an update.
+      # Every run gets a higher versionCode (minutes since 1970, about 29 million and rising), so phones always accept it as an update,
+      # even when the installed app came from another repository or an older numbering scheme. Android refuses to go to a LOWER number.
       - name: Set version
-        run: echo "VERSION_CODE=$((100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+        run: echo "VERSION_CODE=$(( $(date +%s) / 60 ))" >> "$GITHUB_ENV"
 
       - name: Build signed release APK (when signing secrets are set)
         if: ${{ env.KEYSTORE_BASE64 != '' }}

@@ -44,27 +44,40 @@ public class TallyFilesPlugin extends Plugin {
             call.resolve(out);
             return;
         }
-        Uri uri = result.getData().getData();
-        try {
-            String data = call.getString("data", "");
-            boolean isBase64 = Boolean.TRUE.equals(call.getBoolean("base64", false));
-            byte[] bytes = isBase64 ? Base64.decode(data, Base64.DEFAULT) : data.getBytes("UTF-8");
-            OutputStream os = getContext().getContentResolver().openOutputStream(uri, "wt");
-            if (os == null) {
-                call.reject("Could not open the file.");
-                return;
-            }
+        final Uri uri = result.getData().getData();
+        final String data = call.getString("data", "");
+        final boolean isBase64 = Boolean.TRUE.equals(call.getBoolean("base64", false));
+        // Write off the main thread and in small pieces: a big backup written on the UI thread (or copied into a
+        // second huge byte array) can make a phone run out of memory or freeze, which closes the app.
+        new Thread(() -> {
             try {
-                os.write(bytes);
-                os.flush();
-            } finally {
-                os.close();
+                OutputStream os = getContext().getContentResolver().openOutputStream(uri, "wt");
+                if (os == null) {
+                    call.reject("Could not open the file.");
+                    return;
+                }
+                try {
+                    if (isBase64) {
+                        os.write(Base64.decode(data, Base64.DEFAULT));
+                    } else {
+                        java.io.Writer w = new java.io.BufferedWriter(new java.io.OutputStreamWriter(os, "UTF-8"), 65536);
+                        final int step = 65536;
+                        for (int i = 0; i < data.length(); i += step) {
+                            w.write(data, i, Math.min(step, data.length() - i));
+                        }
+                        w.flush();
+                    }
+                    os.flush();
+                } finally {
+                    try { os.close(); } catch (Exception ignore) { }
+                }
+                JSObject ok = new JSObject();
+                ok.put("saved", true);
+                ok.put("uri", uri.toString());
+                call.resolve(ok);
+            } catch (Throwable e) {
+                call.reject("Could not save the file: " + e.getMessage());
             }
-            out.put("saved", true);
-            out.put("uri", uri.toString());
-            call.resolve(out);
-        } catch (Exception e) {
-            call.reject("Could not save the file: " + e.getMessage());
-        }
+        }, "tally-save").start();
     }
 }
