@@ -87,7 +87,9 @@ export async function saveToPhone(filename, text, mime) {
   if (!isNative) { await saveAndShare(filename, text, mime); return true; }
   try {
     const Files = registerPlugin("TallyFiles");
-    const r = await Files.save({ filename, mime: mime || "application/octet-stream", data: text, base64: false });
+    // Step 1: hand the (possibly big) text to the phone and keep it in a temp file. Step 2: open the picker with only the file name.
+    await Files.stage({ data: text, base64: false });
+    const r = await Files.save({ filename, mime: mime || "application/octet-stream" });
     return !!(r && r.saved);
   } catch (e) {
     // older app build without the plugin, or the picker is unavailable: use the share sheet instead
