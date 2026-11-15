@@ -1,6 +1,6 @@
 // Ilelah Business Suite for Windows: a thin desktop shell around the same app that runs on the phone.
 // Shop records live in this PC's own app data folder (they survive updates and uninstalling).
-const { app, BrowserWindow, Menu, protocol, net, shell, session, dialog } = require("electron");
+const { app, BrowserWindow, Menu, protocol, net, shell, session, dialog, ipcMain } = require("electron");
 const path = require("path");
 const { pathToFileURL } = require("url");
 
@@ -18,7 +18,7 @@ function createWindow() {
     width: 1280, height: 820, minWidth: 420, minHeight: 600,
     backgroundColor: "#F5F7FA", title: "Ilelah Business Suite", autoHideMenuBar: true,
     icon: app.isPackaged ? path.join(process.resourcesPath, "icon.ico") : path.join(__dirname, "build", "icon.png"),
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false },
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false, preload: path.join(__dirname, "preload.js") },
   });
   Menu.setApplicationMenu(null);
   win.maximize();
@@ -29,6 +29,21 @@ function createWindow() {
   win.on("closed", () => { win = null; });
   if (process.env.ILELAH_TEST) win.webContents.on("did-finish-load", () => process.send && process.send("loaded"));
 }
+
+// Printing the receipt: use the paper size the receipt asks for (@page in the page CSS), with colours and the logo.
+ipcMain.handle("ilelah:print", (e) => new Promise((resolve) => {
+  const wc = e.sender;
+  wc.print({ silent: false, printBackground: true, preferCSSPageSize: true }, (ok, reason) => resolve({ ok, reason: reason || "" }));
+}));
+ipcMain.handle("ilelah:pdf", async (e, name) => {
+  const wc = e.sender;
+  const safe = String(name).replace(/[^\w.\- ]+/g, "_").slice(0, 80) || "receipt";
+  const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(wc), { defaultPath: safe + ".pdf", filters: [{ name: "PDF", extensions: ["pdf"] }] });
+  if (r.canceled || !r.filePath) return { ok: false, canceled: true };
+  const buf = await wc.printToPDF({ preferCSSPageSize: true, printBackground: true });
+  fs.writeFileSync(r.filePath, buf);
+  return { ok: true, path: r.filePath };
+});
 
 app.whenReady().then(() => {
   protocol.handle(SCHEME, (req) => {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import "./native.js";
-import { saveAndShare, saveToPhone, deviceWord, shareText, saveAndShareBase64, openExternal } from "./native.js";
+import { desktopPdf, hasDesktopShell, saveAndShare, saveToPhone, deviceWord, shareText, saveAndShareBase64, openExternal } from "./native.js";
 import { isBelowCost, marginPct, byProduct, byCashier, byPayment, byDay, profitSummary, dayClose, dayCloseText, normalizePhone, reminderMessage, waLink, smsLink, pickQuickProducts, buildReportWorkbook, payLabel, collectedNet } from "./finance.js";
 import { startScanner, feedback } from "./scanner.js";
 import { printerAvailable, listPairedDevices, bluetoothStatus, openBluetoothSettings } from "./printer-bridge.js";
@@ -11,6 +11,7 @@ import { renderReceiptPng } from "./receipt-image.js";
 import { repriceSale, reviseSale, applyDetails, stockDiffs } from "./saleedit.js";
 import { getUi, setUi, applyUi, THEMES, TEXT_SIZES } from "./appearance.js";
 import { LOGO_MARK } from "./logo.js";
+import { ReceiptSheet, ReceiptPageStyle, Logo as ReceiptLogo, PAPERS, TEMPLATES, paperOf, prepareLogo } from "./receipt-sheet.jsx";
 import { hasPin, setPin, clearPin, isLockedFlag, setLockedFlag } from "./security.js";
 import { LockScreen, OwnerApproval, PinSetup } from "./security.jsx";
 import { lineGross, lineDiscount, lineTotal, saleSubtotal, saleDiscount, saleQty, saleNet, saleNetCost, saleRefunded, saleReturns, buildReturn, returnableQty, discountAmount, priceCart, canEditSale, effectiveUnit, round2 } from "./lines.js";
@@ -876,7 +877,7 @@ function TopBar({ tab, setTab, lowStockCount, currentUser, onLogout, isAdmin, br
         </div>
         <div className="side-foot">
           <button type="button" onClick={() => setKeysOpen(true)}><Info size={17} /> Keyboard shortcuts<span style={{ marginLeft: "auto", opacity: .6 }}>F1</span></button>
-          <div className="ver">{LICENSE_CONFIG.productName} · v1.18 for Windows</div>
+          <div className="ver">{LICENSE_CONFIG.productName} · v1.19 for Windows</div>
         </div>
       </header>
 
@@ -1858,62 +1859,7 @@ function ReceiptModal({ sale: saleProp, settings, branch, onClose, showToast, on
             ))}
           </div>
         )}
-        <div id="printable-receipt" className="force-light" style={{ ...styles.receiptPrintArea, ...(isCredit ? styles.creditPrintArea : {}) }}>
-          <div style={styles.invoiceShopName}>{settings.shopName}</div>
-          {settings.tagline && <div style={styles.invoiceTagline}>({settings.tagline})</div>}
-          {branch && branch.name && <div style={styles.invoiceBranchLine}>Branch: {branch.name}</div>}
-          {branch && branch.address && <div style={styles.invoiceMetaLine}>{branch.address}</div>}
-          {branch && branch.phone && <div style={styles.invoiceMetaLine}>{branch.phone}</div>}
-          <div style={styles.receiptDivider} />
-          <div style={{ ...styles.invoiceLabel, ...(isCredit ? { color: colors.red } : {}) }}>{isCredit ? "CREDIT INVOICE: GOODS ON CREDIT" : "CASH INVOICE"}</div>
-          <div style={styles.receiptMeta}>
-            <div>Invoice No.: <span style={styles.mono}>{sale.invoiceNo}</span></div>
-            <div className="no-print"><SyncBadge id={"sale:" + sale.id} /></div>
-            <div>Date: {sale.date} &nbsp; Time: {new Date(sale.time).toLocaleTimeString()}</div>
-            <div>Name: {sale.customerName || "Walk-in Customer"}</div>
-            {isCredit && sale.customerPhone && <div>Phone: {sale.customerPhone}</div>}
-            {isCredit && sale.dueDate && <div>Payment due by: <b>{sale.dueDate}</b></div>}
-          </div>
-          <div style={styles.receiptDivider} />
-          <div style={styles.invoiceTableHead}>
-            <span style={{ flex: "0 0 24px" }}>S/N</span>
-            <span style={{ flex: "0 0 30px" }}>Qty</span>
-            <span style={{ flex: 1, minWidth: 0 }}>Description</span>
-            <span style={{ flex: "0 0 66px", textAlign: "right" }}>Price</span>
-            <span style={{ flex: "0 0 78px", textAlign: "right" }}>Amount</span>
-          </div>
-          <div style={styles.receiptLines}>
-            {sale.items.map((i, idx) => (
-              <div key={idx} style={styles.invoiceTableRow}>
-                <span style={{ ...styles.mono, flex: "0 0 24px" }}>{idx + 1}</span>
-                <span style={{ ...styles.mono, flex: "0 0 30px" }}>{i.qty}</span>
-                <span style={{ flex: 1, minWidth: 0, paddingRight: 6 }}>{i.name}</span>
-                <span style={{ ...styles.mono, flex: "0 0 66px", textAlign: "right", fontSize: 11 }}>{money(i.price)}</span>
-                <span style={{ ...styles.mono, flex: "0 0 78px", textAlign: "right", fontWeight: 600 }}>{money(lineGross(i))}</span>
-                {lineDiscount(i) > 0 && <span style={{ flex: "0 0 100%", textAlign: "right", fontSize: 12, color: colors.green }}>Discount −{money(lineDiscount(i))}</span>}
-              </div>
-            ))}
-          </div>
-          <div style={styles.receiptDivider} />
-          <div style={{ ...styles.receiptSubRow, marginTop: 0, fontWeight: 600, fontSize: 11.5 }}><span>Items: {sale.items.length}</span><span>Total qty: {saleQty(sale.items)}</span></div>
-          {saleDiscount(sale.items) > 0 && <><div style={{ ...styles.receiptSubRow, fontSize: 11.5 }}><span>Subtotal</span><span style={styles.mono}>{money(saleSubtotal(sale.items))}</span></div><div style={{ ...styles.receiptSubRow, color: colors.green }}><span>Discount</span><span style={styles.mono}>−{money(saleDiscount(sale.items))}</span></div></>}
-          <div style={{ ...styles.receiptTotalRow, fontSize: 15 }}><span>Amount Due</span><span style={styles.mono}>{money(sale.total)}</span></div>
-          {saleRefunded(sale) > 0 && <><div style={{ ...styles.receiptSubRow, fontSize: 11.5, color: colors.red }}><span>Returned by customer</span><span style={styles.mono}>−{money(saleRefunded(sale))}</span></div><div style={{ ...styles.receiptSubRow, fontSize: 12, fontWeight: 700 }}><span>Net after returns</span><span style={styles.mono}>{money(saleNet(sale))}</span></div>{saleReturns(sale).map((r) => <div key={r.id} style={{ fontSize: 10.5, color: colors.inkSoft, marginTop: 2 }}>{r.date}: {r.items.map((i) => `${i.qty}× ${i.name}`).join(", ")}{r.reason ? ` (${r.reason})` : ""}</div>)}</>}
-          <div style={{ ...styles.receiptSubRow, fontSize: 11.5 }}><span>{isCredit ? "Deposit Paid" : "Payment: Cash"}</span><span style={styles.mono}>{money(sale.amountTendered)}</span></div>
-          <div style={{ ...styles.receiptSubRow, ...(isCredit ? { color: colors.red, fontWeight: 700 } : {}) }}><span>{isCredit ? "AMOUNT OWED" : "Balance"}</span><span style={styles.mono}>{money(sale.balanceDue)}</span></div>
-          {Number(sale.prevBalance) > 0 && <><div style={{ ...styles.receiptSubRow, fontSize: 11.5 }}><span>Owed from before</span><span style={styles.mono}>{money(sale.prevBalance)}</span></div><div style={{ ...styles.receiptSubRow, color: colors.red, fontWeight: 700 }}><span>TOTAL OWED NOW</span><span style={styles.mono}>{money(Number(sale.prevBalance) + Number(sale.balanceDue || 0))}</span></div></>}
-          <div style={styles.receiptDivider} />
-          <div style={styles.signatureRow}>
-            <span>Customer Sign: __________</span>
-            <span>Date: __________</span>
-          </div>
-          <div style={styles.receiptFooter}>{isCredit ? "Goods released on credit. Balance must be settled as agreed. No refund of money after payment." : "Received the above goods in good condition. No refund of money after payment."}</div>
-          <div style={styles.signatureRow}>
-            <span>Cashier: {sale.cashierName}</span>
-            <span>Manager: __________</span>
-          </div>
-          <div style={styles.receiptPrintedOn}>Printed on {new Date().toLocaleString()}</div>
-        </div>
+        <ReceiptSheet sale={sale} settings={settings} branch={branch} isCredit={isCredit} badge={<div className="no-print"><SyncBadge id={"sale:" + sale.id} /></div>} />
         <div className="sheet-actions" style={{ flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <Button variant="tonal" icon={ImageIcon} loading={imgBusy} onClick={shareImage} style={{ flex: "1 1 140px" }}>Share as image</Button>
@@ -1928,7 +1874,10 @@ function ReceiptModal({ sale: saleProp, settings, branch, onClose, showToast, on
                 <Button icon={PrinterIcon} onClick={printBt} style={{ flex: 1.3 }}>{printer.address ? "Print" : "Set up printer"}</Button>
               </>
             ) : (
-              <Button icon={PrinterIcon} onClick={() => window.print()} style={{ flex: 2 }}>Print receipt</Button>
+              <>
+                {hasDesktopShell() && <Button variant="secondary" icon={FileText} onClick={() => desktopPdf(`receipt-${sale.invoiceNo}`).then((r) => { if (r && r.ok) showToast("PDF saved."); })} style={{ flex: 1 }}>Save PDF</Button>}
+                <Button icon={PrinterIcon} onClick={() => window.print()} style={{ flex: 2 }}>Print receipt</Button>
+              </>
             )}
           </div>
         </div>
@@ -1954,7 +1903,9 @@ function PaymentReceiptModal({ payment, customer, settings, branch, onClose, sho
             <div style={{ fontSize: 13 }}>{payment.remainingAfter > 0 ? `${money(payment.remainingAfter)} still owed` : "Fully paid"}</div>
           </div>
         </div>
+        <ReceiptPageStyle settings={settings} />
         <div id="printable-receipt" className="force-light" style={styles.receiptPrintArea}>
+          <ReceiptLogo settings={settings} />
           <div style={styles.invoiceShopName}>{settings.shopName}</div>
           {branch && branch.name && <div style={styles.invoiceBranchLine}>Branch: {branch.name}</div>}
           <div style={styles.receiptDivider} />
@@ -3895,17 +3846,24 @@ function PrinterPanel({ settings, showToast }) {
   );
 }
 
+const SAMPLE_SALE = { id: "sample", invoiceNo: "SAMPLE-001", date: "2026-01-15", time: "2026-01-15T10:30:00", paymentType: "cash", customerName: "", customerPhone: "", amountTendered: 6500, balanceDue: 0, total: 6000, cashierName: "Cashier", items: [{ productId: "a", name: "Bread loaf", qty: 2, price: 1500, discount: 0 }, { productId: "b", name: "Bottled water 75cl", qty: 6, price: 500, discount: 0 }] };
 function ShopSettings({ settings, setSettings, showToast, branches, setBranches, onResetTransactions, onResetEverything, fullState, restoreAll, cloudOn }) {
   const [form, setForm] = useState(settings);
   const [confirmMode, setConfirmMode] = useState(null); // null | "figures" | "everything" | "restore"
   const [confirmText, setConfirmText] = useState("");
   const [restoreData, setRestoreData] = useState(null);
   const fileInputRef = useRef(null);
+  const logoInputRef = useRef(null);
+  const pickLogo = (e) => {
+    const f = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    prepareLogo(f).then((logo) => setForm((prev) => ({ ...prev, logo }))).catch(() => showToast("That file is not a picture. Choose a PNG or JPG.", "err"));
+  };
 
   const save = () => {
     if (!form.shopName.trim()) { showToast("Shop name is required.", "err"); return; }
     setSettings(form);
-    showToast("Shop details saved. They'll appear on your next receipt.");
+    showToast("Saved. Your receipt design, paper size and logo will be used on the next receipt.");
   };
 
   const closeConfirm = () => { setConfirmMode(null); setConfirmText(""); setRestoreData(null); };
@@ -3996,6 +3954,43 @@ function ShopSettings({ settings, setSettings, showToast, branches, setBranches,
             <Field label="Phone number(s)">
               <input style={styles.input} inputMode="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="e.g. 08169500844" />
             </Field>
+            <div style={{ borderTop: `1px solid ${colors.line}`, paddingTop: 14, marginTop: 4 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 2 }}>Receipt look</div>
+              <div style={{ fontSize: 12.5, color: colors.inkSoft, marginBottom: 10 }}>Choose the design, the paper you print on, and add your business logo.</div>
+              <Field label="Business logo">
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ width: 72, height: 72, borderRadius: 12, border: `1px dashed ${colors.lineStrong}`, display: "flex", alignItems: "center", justifyContent: "center", background: "#fff", overflow: "hidden", flex: "0 0 auto" }}>
+                    {form.logo ? <img src={form.logo} alt="Logo" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <ImageIcon size={26} color={colors.inkFaint} />}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <Button variant="secondary" small icon={UploadIcon} onClick={() => logoInputRef.current && logoInputRef.current.click()}>{form.logo ? "Change logo" : "Upload logo"}</Button>
+                    {form.logo && <Button variant="secondary" small onClick={() => setForm({ ...form, logo: "" })}>Remove logo</Button>}
+                  </div>
+                  <input ref={logoInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={pickLogo} />
+                </div>
+                <div style={{ fontSize: 12, color: colors.inkSoft, marginTop: 6 }}>PNG or JPG. It is shrunk automatically. A square or wide logo on a white or transparent background looks best.</div>
+              </Field>
+              <Field label="Receipt design">
+                <div style={{ display: "grid", gap: 8 }}>
+                  {Object.entries(TEMPLATES).map(([k, v]) => (
+                    <button key={k} type="button" onClick={() => setForm({ ...form, receiptTemplate: k })} aria-pressed={(form.receiptTemplate || "classic") === k}
+                      style={{ textAlign: "left", padding: "10px 12px", borderRadius: 12, border: `2px solid ${(form.receiptTemplate || "classic") === k ? colors.primary : colors.line}`, background: colors.surface, color: colors.ink, cursor: "pointer", font: "inherit" }}>
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>{v.label}</div><div style={{ fontSize: 12.5, color: colors.inkSoft }}>{v.hint}</div>
+                    </button>
+                  ))}
+                </div>
+              </Field>
+              <Field label="Paper size">
+                <select style={styles.input} value={form.paperSize || "80"} onChange={(e) => setForm({ ...form, paperSize: e.target.value })}>
+                  {Object.entries(PAPERS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
+                <div style={{ fontSize: 12, color: colors.inkSoft, marginTop: 6 }}>Used when you print from the computer and when you save a receipt as PDF. Bluetooth printers keep their own width setting under Printer.</div>
+              </Field>
+              <div style={{ fontSize: 12.5, fontWeight: 600, margin: "4px 0 6px" }}>Preview</div>
+              <div style={{ background: colors.surface2, borderRadius: 12, padding: 10, overflowX: "auto" }}>
+                <ReceiptSheet preview sale={SAMPLE_SALE} settings={{ ...form, shopName: form.shopName || "My Shop" }} branch={null} isCredit={false} />
+              </div>
+            </div>
             <Button full icon={Save} onClick={save}>Save shop details</Button>
           </div>
         </div>

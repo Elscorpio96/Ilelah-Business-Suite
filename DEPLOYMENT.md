@@ -179,3 +179,10 @@ Phones only accept an in-place update when the APK is signed with the SAME key a
 * **Cloud mode:** run `supabase/migrations/0012_edit_sale_details.sql` once in the SQL Editor (after 0011) **before** installing the new app on phones. Safe to run twice. Other phones pick the edit up on their next sync.
 * **Purchases (v1.18):** New purchase order now works like the Sell page: search or tap each item that arrived (tap again to add more), then adjust with the − / + stepper and the cost each. Scan still adds 1 per scan. No database change.
 * **Backup to phone no longer closes the app (v1.18):** the backup is first written to a private temp file, and only the file name goes to Android's file picker. Before this, a big backup was kept in Android's saved state while the picker was open, which made the phone close the app when you came back.
+
+## 21. v1.19: receipt designs, paper sizes and business logo
+* **Settings → Shop details → Receipt look** (owner): upload a **business logo** (PNG/JPG, shrunk automatically), pick a **receipt design** (Classic, Compact, Business invoice) and a **paper size** (58 mm roll, 80 mm roll, A5, A4). A live preview shows the result before you save.
+* The logo, design and paper size apply to the receipt on screen, **Print receipt** on the computer, **Save PDF** (Windows app), the phone's PDF/print and **Share as image** (logo only). Roll sizes are cut to the exact length of the receipt; A5/A4 print as normal pages.
+* Windows app: printing now goes through the app, so the chosen paper size is used and a **Save PDF** button appears on every receipt.
+* These settings are saved on each device (and inside backups). They are not part of the cloud shop record, so set them once on each computer/phone.
+* Bluetooth thermal printers keep their own width setting (Settings → Receipt printer). No database change.
