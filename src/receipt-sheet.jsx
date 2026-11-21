@@ -5,8 +5,8 @@ import { lineGross, lineDiscount, saleDiscount, saleSubtotal, saleQty, saleRefun
 
 // Paper the receipt is printed on. `w`/`m`: printable width and page margin in mm. zoom scales the type for bigger paper.
 export const PAPERS = {
-  "58": { label: "58 mm roll (small thermal)", page: "58mm auto", w: 54, m: 2, zoom: 0.9, tall: false },
-  "80": { label: "80 mm roll (standard thermal)", page: "80mm auto", w: 76, m: 2, zoom: 1, tall: false },
+  "58": { label: "58 mm roll (small thermal)", page: "58mm auto", sheet: 58, w: 48, m: 0, zoom: 0.9, tall: false },
+  "80": { label: "80 mm roll (standard thermal)", page: "80mm auto", sheet: 80, w: 70, m: 0, zoom: 1, tall: false },
   a5: { label: "A5 sheet (half page)", page: "A5 portrait", w: 132, m: 8, zoom: 1.2, tall: true },
   a4: { label: "A4 sheet (full page)", page: "A4 portrait", w: 190, m: 10, zoom: 1.4, tall: true },
 };
@@ -20,9 +20,13 @@ export const templateOf = (s) => (TEMPLATES[(s && s.receiptTemplate)] ? s.receip
 
 const mmPx = 3.7795;
 // Print page size + the width of the receipt on paper (also used on screen so the preview matches).
+export const printWidthOf = (settings) => { const p = paperOf(settings); const v = Number(settings && settings.printWidth); return v >= 30 && v <= p.w + 40 ? v : p.w; };
 export function ReceiptPageStyle({ settings }) {
   const p = paperOf(settings);
-  const w = (p.w / p.zoom).toFixed(2);
+  const pw = p.tall ? p.w : printWidthOf(settings);
+  const shift = Math.max(-20, Math.min(20, Number(settings && settings.printLeft) || 0));
+  const w = (pw / p.zoom).toFixed(2);
+  const left = (shift / p.zoom).toFixed(2);
   // Roll paper has no fixed length, but print engines need one: measure the receipt and make the page exactly that tall.
   const [hmm, setH] = React.useState(0);
   React.useEffect(() => {
@@ -34,14 +38,14 @@ export function ReceiptPageStyle({ settings }) {
     let ro = null;
     if (typeof ResizeObserver !== "undefined") { ro = new ResizeObserver(measure); ro.observe(el); }
     return () => { if (ro) ro.disconnect(); };
-  }, [p.tall, p.w, settings.receiptTemplate]);
-  const size = p.tall ? p.page : `${p.w + p.m * 2}mm ${Math.max(60, hmm + p.m * 2 + 4)}mm`;
+  }, [p.tall, p.w, settings.receiptTemplate, pw]);
+  const size = p.tall ? p.page : `${p.sheet}mm ${Math.max(60, hmm + p.m * 2 + 6)}mm`;
   return (
     <style>{`
       @media print {
         @page { size: ${size}; margin: ${p.m}mm; }
         html, body { height: 100vh !important; min-height: 0 !important; overflow: hidden !important; background: #fff !important; }
-        #printable-receipt { width: ${w}mm !important; max-width: ${w}mm !important; padding: 0 !important; zoom: ${p.zoom}; border: none !important; border-radius: 0 !important; }
+        #printable-receipt { left: ${left}mm !important; width: ${w}mm !important; max-width: ${w}mm !important; padding: 0 !important; zoom: ${p.zoom}; border: none !important; border-radius: 0 !important; }
       }
     `}</style>
   );

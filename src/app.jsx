@@ -11,7 +11,7 @@ import { renderReceiptPng } from "./receipt-image.js";
 import { repriceSale, reviseSale, applyDetails, stockDiffs } from "./saleedit.js";
 import { getUi, setUi, applyUi, THEMES, TEXT_SIZES } from "./appearance.js";
 import { LOGO_MARK } from "./logo.js";
-import { ReceiptSheet, ReceiptPageStyle, Logo as ReceiptLogo, PAPERS, TEMPLATES, paperOf, prepareLogo } from "./receipt-sheet.jsx";
+import { ReceiptSheet, ReceiptPageStyle, Logo as ReceiptLogo, PAPERS, TEMPLATES, paperOf, printWidthOf, prepareLogo } from "./receipt-sheet.jsx";
 import { hasPin, setPin, clearPin, isLockedFlag, setLockedFlag } from "./security.js";
 import { LockScreen, OwnerApproval, PinSetup } from "./security.jsx";
 import { lineGross, lineDiscount, lineTotal, saleSubtotal, saleDiscount, saleQty, saleNet, saleNetCost, saleRefunded, saleReturns, buildReturn, returnableQty, discountAmount, priceCart, canEditSale, effectiveUnit, round2 } from "./lines.js";
@@ -3985,6 +3985,17 @@ function ShopSettings({ settings, setSettings, showToast, branches, setBranches,
                   {Object.entries(PAPERS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                 </select>
                 <div style={{ fontSize: 12, color: colors.inkSoft, marginTop: 6 }}>Used when you print from the computer and when you save a receipt as PDF. Bluetooth printers keep their own width setting under Printer.</div>
+              </Field>
+              <Field label="Fine-tune printing (if the printout is shifted or cut)">
+                <div style={{ display: "flex", gap: 10 }}>
+                  <label style={{ flex: 1, fontSize: 12.5, color: colors.inkSoft }}>Receipt width (mm)
+                    <input style={{ ...styles.input, marginTop: 4 }} type="number" inputMode="decimal" min="30" max="210" placeholder={String(paperOf(form).w)} value={form.printWidth || ""} onChange={(e) => setForm({ ...form, printWidth: e.target.value })} />
+                  </label>
+                  <label style={{ flex: 1, fontSize: 12.5, color: colors.inkSoft }}>Move left (mm)
+                    <input style={{ ...styles.input, marginTop: 4 }} type="number" inputMode="decimal" min="-20" max="20" placeholder="0" value={form.printLeft || ""} onChange={(e) => setForm({ ...form, printLeft: e.target.value })} />
+                  </label>
+                </div>
+                <div style={{ fontSize: 12, color: colors.inkSoft, marginTop: 6 }}>Too much space on the left and the right side cut off? Make the width smaller (for example 64) and/or put a minus number in Move left (for example −4). Leave empty for the default.</div>
               </Field>
               <div style={{ fontSize: 12.5, fontWeight: 600, margin: "4px 0 6px" }}>Preview</div>
               <div style={{ background: colors.surface2, borderRadius: 12, padding: 10, overflowX: "auto" }}>

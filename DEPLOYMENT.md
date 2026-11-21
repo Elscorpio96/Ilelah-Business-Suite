@@ -186,3 +186,4 @@ Phones only accept an in-place update when the APK is signed with the SAME key a
 * Windows app: printing now goes through the app, so the chosen paper size is used and a **Save PDF** button appears on every receipt.
 * These settings are saved on each device (and inside backups). They are not part of the cloud shop record, so set them once on each computer/phone.
 * Bluetooth thermal printers keep their own width setting (Settings → Receipt printer). No database change.
+* **Printer shifted or cut (v1.19.1):** roll receipts now print with no page margin and a narrower body (80 mm roll: 70 mm, 58 mm roll: 48 mm) because thermal printers add their own unprintable edge. If your printer still shifts the text, use **Settings → Shop details → Receipt look → Fine-tune printing**: make *Receipt width* smaller and/or put a minus number in *Move left* (for example 64 and −4).
