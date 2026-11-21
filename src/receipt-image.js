@@ -53,6 +53,13 @@ export async function renderReceiptPng(sale, settings, branch, money) {
   try { if (document.fonts && document.fonts.load) { await document.fonts.load("400 14px Inter"); await document.fonts.load("700 14px Inter"); } } catch (e) {}
   const W = 440, PAD = 24, S = 2, inner = W - PAD * 2;
   const rows = buildReceiptRows(sale, settings, branch, money);
+  if (settings.logo) {
+    try {
+      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = settings.logo; });
+      const h = Math.min(60, img.height), w = Math.min(inner * 0.6, img.width * (h / img.height));
+      rows.unshift({ k: "logo", img, w, h: h + 8, ih: h });
+    } catch (e) { /* a bad logo never blocks the receipt */ }
+  }
   const measure = document.createElement("canvas").getContext("2d");
   const font = (w, px) => `${w} ${px}px ${FONT}`;
   const sizes = { title: [700, 18], bold: [700, 12], small: [400, 11] };
@@ -60,7 +67,8 @@ export async function renderReceiptPng(sale, settings, branch, money) {
   let y = PAD; const laid = [];
   for (const r of rows) {
     let h = 0, lines = null;
-    if (r.k === "divider") h = 14;
+    if (r.k === "logo") h = r.h;
+    else if (r.k === "divider") h = 14;
     else if (r.k === "gap") h = r.h;
     else if (r.k === "head") h = 20;
     else if (r.k === "pair") h = r.big ? 26 : r.small ? 17 : 20;
@@ -79,6 +87,7 @@ export async function renderReceiptPng(sale, settings, branch, money) {
   for (const { r, y: ty, h, lines } of laid) {
     if (r.k === "divider") { ctx.strokeStyle = "#D3DAE3"; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(PAD, ty + 9); ctx.lineTo(W - PAD, ty + 9); ctx.stroke(); ctx.setLineDash([]); continue; }
     if (r.k === "gap") continue;
+    if (r.k === "logo") { ctx.drawImage(r.img, (W - r.w) / 2, ty, r.w, r.ih); continue; }
     if (r.k === "head") {
       ctx.font = font(600, 10.5); ctx.fillStyle = "#5B6678";
       ctx.textAlign = "left"; ctx.fillText("S/N", PAD, ty + 14); ctx.fillText("Qty", PAD + 26, ty + 14);

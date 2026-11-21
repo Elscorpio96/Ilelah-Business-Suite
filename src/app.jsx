@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import "./native.js";
-import { saveAndShare, saveToPhone, deviceWord, shareText, saveAndShareBase64, openExternal } from "./native.js";
+import { desktopPdf, hasDesktopShell, saveAndShare, saveToPhone, deviceWord, shareText, saveAndShareBase64, openExternal } from "./native.js";
 import { isBelowCost, marginPct, byProduct, byCashier, byPayment, byDay, profitSummary, dayClose, dayCloseText, normalizePhone, reminderMessage, waLink, smsLink, pickQuickProducts, buildReportWorkbook, payLabel, collectedNet } from "./finance.js";
 import { startScanner, feedback } from "./scanner.js";
 import { printerAvailable, listPairedDevices, bluetoothStatus, openBluetoothSettings } from "./printer-bridge.js";
@@ -11,6 +11,7 @@ import { renderReceiptPng } from "./receipt-image.js";
 import { repriceSale, reviseSale, applyDetails, stockDiffs } from "./saleedit.js";
 import { getUi, setUi, applyUi, THEMES, TEXT_SIZES } from "./appearance.js";
 import { LOGO_MARK } from "./logo.js";
+import { ReceiptSheet, ReceiptPageStyle, Logo as ReceiptLogo, PAPERS, TEMPLATES, paperOf, printWidthOf, prepareLogo } from "./receipt-sheet.jsx";
 import { hasPin, setPin, clearPin, isLockedFlag, setLockedFlag } from "./security.js";
 import { LockScreen, OwnerApproval, PinSetup } from "./security.jsx";
 import { lineGross, lineDiscount, lineTotal, saleSubtotal, saleDiscount, saleQty, saleNet, saleNetCost, saleRefunded, saleReturns, buildReturn, returnableQty, discountAmount, priceCart, canEditSale, effectiveUnit, round2 } from "./lines.js";
@@ -399,7 +400,7 @@ function App({ license }) {
   const multiBranch = branches.length > 1;
   const lowStockCount = products.filter((p) => getStock(p, activeBranchId) <= p.lowStock).length;
 
-  const syncProps = cloudOn ? { cloudOn: true, rt, stats: sync.stats, busy: sync.busy, online: sync.online, lastAt: sync.lastAt, error: sync.error, openCenter: () => setSyncOpen(true), syncNow: () => syncNow(true), refresh: () => setSync((x) => ({ ...x, stats: rt.outbox.stats() })) } : null;
+  const syncProps = cloudOn ? { cloudOn: true, rt, stats: sync.stats, busy: sync.busy, online: sync.online, lastAt: sync.lastAt, error: sync.error, openCenter: () => setSyncOpen(true), syncNow: () => syncNow(true), restoreFromCloud: () => { try { const ls = window.localStorage; [CURSOR_KEY, STAMP_KEY, STOCK_CURSOR_KEY, "tally:cloud:lastfull"].forEach((k) => ls.removeItem(k)); } catch (_) {} return syncNow(true); }, refresh: () => setSync((x) => ({ ...x, stats: rt.outbox.stats() })) } : null;
   const onResetTransactions = () => {
     setSales([]);
     setPurchases([]);
@@ -469,6 +470,12 @@ function App({ license }) {
       />
       {syncOpen && syncProps && <SyncCenter sync={syncProps} onClose={() => setSyncOpen(false)} />}
       <main className="page" key={tab}>
+        {cloudOn && sync.stats && sync.stats.failed > 0 && (
+          <button type="button" onClick={() => setSyncOpen(true)} style={{ display: "flex", gap: 8, alignItems: "flex-start", width: "100%", textAlign: "left", margin: "0 0 12px", padding: "12px 14px", borderRadius: 12, border: `1px solid ${colors.red}`, background: colors.redSoft, color: colors.red, fontWeight: 600, fontSize: 14, lineHeight: 1.4 }}>
+            <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>{sync.stats.failed} change{sync.stats.failed === 1 ? " was" : "s were"} refused by the cloud, so other phones may not see {sync.stats.failed === 1 ? "it" : "them"} (for example an edited receipt). Tap to review.</span>
+          </button>
+        )}
         {tab === "dashboard" && isAdmin && (
           <AdminDashboard products={products} sales={sales} purchases={purchases} expenses={expenses} customers={customers} creditPayments={creditPayments} branches={branches} multiBranch={multiBranch} setTab={setTab} goAction={goAction} currentUser={currentUser} />
         )}
@@ -876,7 +883,7 @@ function TopBar({ tab, setTab, lowStockCount, currentUser, onLogout, isAdmin, br
         </div>
         <div className="side-foot">
           <button type="button" onClick={() => setKeysOpen(true)}><Info size={17} /> Keyboard shortcuts<span style={{ marginLeft: "auto", opacity: .6 }}>F1</span></button>
-          <div className="ver">{LICENSE_CONFIG.productName} · v1.18 for Windows</div>
+          <div className="ver">{LICENSE_CONFIG.productName} · v1.19 for Windows</div>
         </div>
       </header>
 
@@ -1245,6 +1252,9 @@ function Inventory({ products, setProducts, showToast, readOnly, activeBranchId,
   const [scanTarget, setScanTarget] = useState(null); // "form" | "search"
   const [filter, setFilter] = useState("all");
   const [toDelete, setToDelete] = useState(null);
+  const [selMode, setSelMode] = useState(false);
+  const [sel, setSel] = useState(() => new Set());
+  const [bulkAsk, setBulkAsk] = useState(false);
   const belowCount = !readOnly ? products.filter(isBelowCost).length : 0;
   const branchName = (branches.find((b) => b.id === activeBranchId) || {}).name || "";
 
@@ -1308,6 +1318,17 @@ function Inventory({ products, setProducts, showToast, readOnly, activeBranchId,
     showToast("Product removed.", "ok", 7000, gone ? { label: "Undo", run: () => { setProducts((prev) => (prev.some((p) => p.id === gone.id) ? prev : [...prev, gone]), "server-stock"); showToast("Product restored."); } } : undefined);
   };
 
+  const exitSel = () => { setSelMode(false); setSel(new Set()); setBulkAsk(false); };
+  const toggleSel = (id) => setSel((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const allShownSelected = filtered.length > 0 && filtered.every((p) => sel.has(p.id));
+  const toggleAllShown = () => setSel(allShownSelected ? new Set() : new Set(filtered.map((p) => p.id)));
+  const removeMany = () => {
+    const gone = products.filter((p) => sel.has(p.id)); if (!gone.length) return;
+    setProducts((prev) => prev.filter((p) => !sel.has(p.id)));
+    showToast(`${gone.length} product${gone.length === 1 ? "" : "s"} removed.`, "ok", 9000, { label: "Undo", run: () => { setProducts((prev) => [...prev, ...gone.filter((g) => !prev.some((p) => p.id === g.id))], "server-stock"); showToast("Products restored."); } });
+    exitSel();
+  };
+
   const chipOptions = [["all", "All", products.length], ["low", "Low stock", lowCount], ["out", "Out of stock", outCount]];
   if (!readOnly) chipOptions.push(["below", "Below cost", belowCount], ["pinned", "Pinned", pinCount]);
 
@@ -1323,6 +1344,20 @@ function Inventory({ products, setProducts, showToast, readOnly, activeBranchId,
         <div style={{ display: "flex", gap: 10 }}>
           <Button icon={Plus} onClick={openAdd} style={{ flex: 1 }}>Add product</Button>
           <Button variant="secondary" icon={UploadIcon} onClick={() => setImporting(true)} style={{ flex: 1 }}>Import / export</Button>
+        </div>
+      )}
+      {!readOnly && products.length > 0 && !selMode && (
+        <div><Button small variant="secondary" icon={Trash2} onClick={() => setSelMode(true)}>Select items to delete</Button></div>
+      )}
+      {selMode && (
+        <div className="card" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "10px 12px" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 14 }}>
+            <input type="checkbox" checked={allShownSelected} onChange={toggleAllShown} style={{ width: 20, height: 20 }} aria-label="Select all shown" />
+            All shown ({filtered.length})
+          </label>
+          <span style={{ flex: 1, fontSize: 13.5, color: colors.inkSoft }}>{sel.size} selected</span>
+          <Button small variant="secondary" onClick={exitSel}>Cancel</Button>
+          <Button small variant="danger" icon={Trash2} disabled={sel.size === 0} onClick={() => setBulkAsk(true)}>Delete{sel.size ? ` (${sel.size})` : ""}</Button>
         </div>
       )}
       {scanTarget && (
@@ -1391,6 +1426,14 @@ function Inventory({ products, setProducts, showToast, readOnly, activeBranchId,
               </>
             );
             if (readOnly) return <div key={p.id} className="row">{content}</div>;
+            if (selMode) return (
+              <div key={p.id} className="row-split">
+                <button type="button" className="row" role="checkbox" aria-checked={sel.has(p.id)} onClick={() => toggleSel(p.id)} aria-label={`Select ${p.name}`} style={sel.has(p.id) ? { background: colors.primarySoft } : undefined}>
+                  <input type="checkbox" readOnly checked={sel.has(p.id)} tabIndex={-1} style={{ width: 22, height: 22, flex: "0 0 22px", pointerEvents: "none" }} />
+                  {content}
+                </button>
+              </div>
+            );
             return (
               <div key={p.id} className="row-split">
                 <button type="button" className="row" onClick={() => openEdit(p)} aria-label={`Edit ${p.name}`}>{content}</button>
@@ -1454,6 +1497,17 @@ function Inventory({ products, setProducts, showToast, readOnly, activeBranchId,
         </Modal>
       )}
 
+      {bulkAsk && (
+        <Modal title={`Delete ${sel.size} product${sel.size === 1 ? "" : "s"}?`} onClose={() => setBulkAsk(false)}>
+          <p style={{ marginTop: 0, color: colors.inkSoft, lineHeight: 1.5 }}>
+            {sel.size} selected product{sel.size === 1 ? "" : "s"} will be removed from your stock list. Past sales that include them are kept. You can undo right after.
+          </p>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <Button variant="secondary" onClick={() => setBulkAsk(false)}>Cancel</Button>
+            <Button variant="danger" icon={Trash2} onClick={removeMany}>Delete {sel.size}</Button>
+          </div>
+        </Modal>
+      )}
       {toDelete && (
         <Modal title="Delete product?" onClose={() => setToDelete(null)}>
           <p style={{ color: colors.inkSoft, lineHeight: 1.5, margin: "4px 0 0" }}>
@@ -1858,62 +1912,7 @@ function ReceiptModal({ sale: saleProp, settings, branch, onClose, showToast, on
             ))}
           </div>
         )}
-        <div id="printable-receipt" className="force-light" style={{ ...styles.receiptPrintArea, ...(isCredit ? styles.creditPrintArea : {}) }}>
-          <div style={styles.invoiceShopName}>{settings.shopName}</div>
-          {settings.tagline && <div style={styles.invoiceTagline}>({settings.tagline})</div>}
-          {branch && branch.name && <div style={styles.invoiceBranchLine}>Branch: {branch.name}</div>}
-          {branch && branch.address && <div style={styles.invoiceMetaLine}>{branch.address}</div>}
-          {branch && branch.phone && <div style={styles.invoiceMetaLine}>{branch.phone}</div>}
-          <div style={styles.receiptDivider} />
-          <div style={{ ...styles.invoiceLabel, ...(isCredit ? { color: colors.red } : {}) }}>{isCredit ? "CREDIT INVOICE: GOODS ON CREDIT" : "CASH INVOICE"}</div>
-          <div style={styles.receiptMeta}>
-            <div>Invoice No.: <span style={styles.mono}>{sale.invoiceNo}</span></div>
-            <div className="no-print"><SyncBadge id={"sale:" + sale.id} /></div>
-            <div>Date: {sale.date} &nbsp; Time: {new Date(sale.time).toLocaleTimeString()}</div>
-            <div>Name: {sale.customerName || "Walk-in Customer"}</div>
-            {isCredit && sale.customerPhone && <div>Phone: {sale.customerPhone}</div>}
-            {isCredit && sale.dueDate && <div>Payment due by: <b>{sale.dueDate}</b></div>}
-          </div>
-          <div style={styles.receiptDivider} />
-          <div style={styles.invoiceTableHead}>
-            <span style={{ flex: "0 0 24px" }}>S/N</span>
-            <span style={{ flex: "0 0 30px" }}>Qty</span>
-            <span style={{ flex: 1, minWidth: 0 }}>Description</span>
-            <span style={{ flex: "0 0 66px", textAlign: "right" }}>Price</span>
-            <span style={{ flex: "0 0 78px", textAlign: "right" }}>Amount</span>
-          </div>
-          <div style={styles.receiptLines}>
-            {sale.items.map((i, idx) => (
-              <div key={idx} style={styles.invoiceTableRow}>
-                <span style={{ ...styles.mono, flex: "0 0 24px" }}>{idx + 1}</span>
-                <span style={{ ...styles.mono, flex: "0 0 30px" }}>{i.qty}</span>
-                <span style={{ flex: 1, minWidth: 0, paddingRight: 6 }}>{i.name}</span>
-                <span style={{ ...styles.mono, flex: "0 0 66px", textAlign: "right", fontSize: 11 }}>{money(i.price)}</span>
-                <span style={{ ...styles.mono, flex: "0 0 78px", textAlign: "right", fontWeight: 600 }}>{money(lineGross(i))}</span>
-                {lineDiscount(i) > 0 && <span style={{ flex: "0 0 100%", textAlign: "right", fontSize: 12, color: colors.green }}>Discount −{money(lineDiscount(i))}</span>}
-              </div>
-            ))}
-          </div>
-          <div style={styles.receiptDivider} />
-          <div style={{ ...styles.receiptSubRow, marginTop: 0, fontWeight: 600, fontSize: 11.5 }}><span>Items: {sale.items.length}</span><span>Total qty: {saleQty(sale.items)}</span></div>
-          {saleDiscount(sale.items) > 0 && <><div style={{ ...styles.receiptSubRow, fontSize: 11.5 }}><span>Subtotal</span><span style={styles.mono}>{money(saleSubtotal(sale.items))}</span></div><div style={{ ...styles.receiptSubRow, color: colors.green }}><span>Discount</span><span style={styles.mono}>−{money(saleDiscount(sale.items))}</span></div></>}
-          <div style={{ ...styles.receiptTotalRow, fontSize: 15 }}><span>Amount Due</span><span style={styles.mono}>{money(sale.total)}</span></div>
-          {saleRefunded(sale) > 0 && <><div style={{ ...styles.receiptSubRow, fontSize: 11.5, color: colors.red }}><span>Returned by customer</span><span style={styles.mono}>−{money(saleRefunded(sale))}</span></div><div style={{ ...styles.receiptSubRow, fontSize: 12, fontWeight: 700 }}><span>Net after returns</span><span style={styles.mono}>{money(saleNet(sale))}</span></div>{saleReturns(sale).map((r) => <div key={r.id} style={{ fontSize: 10.5, color: colors.inkSoft, marginTop: 2 }}>{r.date}: {r.items.map((i) => `${i.qty}× ${i.name}`).join(", ")}{r.reason ? ` (${r.reason})` : ""}</div>)}</>}
-          <div style={{ ...styles.receiptSubRow, fontSize: 11.5 }}><span>{isCredit ? "Deposit Paid" : "Payment: Cash"}</span><span style={styles.mono}>{money(sale.amountTendered)}</span></div>
-          <div style={{ ...styles.receiptSubRow, ...(isCredit ? { color: colors.red, fontWeight: 700 } : {}) }}><span>{isCredit ? "AMOUNT OWED" : "Balance"}</span><span style={styles.mono}>{money(sale.balanceDue)}</span></div>
-          {Number(sale.prevBalance) > 0 && <><div style={{ ...styles.receiptSubRow, fontSize: 11.5 }}><span>Owed from before</span><span style={styles.mono}>{money(sale.prevBalance)}</span></div><div style={{ ...styles.receiptSubRow, color: colors.red, fontWeight: 700 }}><span>TOTAL OWED NOW</span><span style={styles.mono}>{money(Number(sale.prevBalance) + Number(sale.balanceDue || 0))}</span></div></>}
-          <div style={styles.receiptDivider} />
-          <div style={styles.signatureRow}>
-            <span>Customer Sign: __________</span>
-            <span>Date: __________</span>
-          </div>
-          <div style={styles.receiptFooter}>{isCredit ? "Goods released on credit. Balance must be settled as agreed. No refund of money after payment." : "Received the above goods in good condition. No refund of money after payment."}</div>
-          <div style={styles.signatureRow}>
-            <span>Cashier: {sale.cashierName}</span>
-            <span>Manager: __________</span>
-          </div>
-          <div style={styles.receiptPrintedOn}>Printed on {new Date().toLocaleString()}</div>
-        </div>
+        <ReceiptSheet sale={sale} settings={settings} branch={branch} isCredit={isCredit} badge={<div className="no-print"><SyncBadge id={"sale:" + sale.id} /></div>} />
         <div className="sheet-actions" style={{ flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <Button variant="tonal" icon={ImageIcon} loading={imgBusy} onClick={shareImage} style={{ flex: "1 1 140px" }}>Share as image</Button>
@@ -1928,7 +1927,10 @@ function ReceiptModal({ sale: saleProp, settings, branch, onClose, showToast, on
                 <Button icon={PrinterIcon} onClick={printBt} style={{ flex: 1.3 }}>{printer.address ? "Print" : "Set up printer"}</Button>
               </>
             ) : (
-              <Button icon={PrinterIcon} onClick={() => window.print()} style={{ flex: 2 }}>Print receipt</Button>
+              <>
+                {hasDesktopShell() && <Button variant="secondary" icon={FileText} onClick={() => desktopPdf(`receipt-${sale.invoiceNo}`).then((r) => { if (r && r.ok) showToast("PDF saved."); })} style={{ flex: 1 }}>Save PDF</Button>}
+                <Button icon={PrinterIcon} onClick={() => window.print()} style={{ flex: 2 }}>Print receipt</Button>
+              </>
             )}
           </div>
         </div>
@@ -1954,7 +1956,9 @@ function PaymentReceiptModal({ payment, customer, settings, branch, onClose, sho
             <div style={{ fontSize: 13 }}>{payment.remainingAfter > 0 ? `${money(payment.remainingAfter)} still owed` : "Fully paid"}</div>
           </div>
         </div>
+        <ReceiptPageStyle settings={settings} />
         <div id="printable-receipt" className="force-light" style={styles.receiptPrintArea}>
+          <ReceiptLogo settings={settings} />
           <div style={styles.invoiceShopName}>{settings.shopName}</div>
           {branch && branch.name && <div style={styles.invoiceBranchLine}>Branch: {branch.name}</div>}
           <div style={styles.receiptDivider} />
@@ -2020,8 +2024,13 @@ function Checkout({ products, setProducts, sales, setSales, customers, setCustom
   const [quickMore, setQuickMore] = useState(false);
   const [browse, setBrowse] = useState("quick");
   const [qtyDraft, setQtyDraft] = useState({});
+  const [cat, setCat] = useState("");   // "" = no category filter; "__none" = items without a category
+  const cats = useMemo(() => { const m = {}; products.forEach((p) => { const c = (p.category || "").trim(); if (c) m[c] = (m[c] || 0) + 1; }); return Object.keys(m).sort((a, b) => a.localeCompare(b)).map((c) => [c, c, m[c]]); }, [products]);
+  const uncat = useMemo(() => products.filter((p) => !(p.category || "").trim()).length, [products]);
+  const catActive = cat && (cat === "__none" ? uncat > 0 : cats.some(([c]) => c === cat)) ? cat : "";
   const isOwner = currentUser.role === "admin";
   const allSorted = useMemo(() => [...products].sort((a, b) => a.name.localeCompare(b.name)), [products]);
+  const catList = useMemo(() => (catActive ? allSorted.filter((p) => (catActive === "__none" ? !(p.category || "").trim() : (p.category || "").trim() === catActive)) : allSorted), [allSorted, catActive]);
   const quick = useMemo(() => pickQuickProducts(products, sales, todayStr(), quickMore ? 60 : 12), [products, sales, quickMore]);
 
   useEffect(() => {
@@ -2089,7 +2098,7 @@ function Checkout({ products, setProducts, sales, setSales, customers, setCustom
 
   const typeQty = (id, text) => {
     setQtyDraft((d) => ({ ...d, [id]: text }));
-    const n = Math.floor(Number(text));
+    const n = Math.round(Number(text) * 1000) / 1000;   // halves etc. are allowed (2.5 kg, 0.5 bag)
     if (text === "" || !(n > 0)) return;
     const product = products.find((p) => p.id === id);
     const stock = product ? getStock(product, activeBranchId) : n;
@@ -2282,10 +2291,19 @@ function Checkout({ products, setProducts, sales, setSales, customers, setCustom
         )}
         {results.length === 0 && !query.trim() && (
           <div>
-            <SectionHeader title={browse === "quick" ? "Quick sale" : "All items"} action={products.length > 0 ? <div style={{ width: 190 }}><Segmented value={browse} onChange={setBrowse} options={[["quick", "Quick"], ["all", `All (${products.length})`]]} /></div> : null} />
-            {products.length > 0 && browse === "all" ? (
+            <SectionHeader title={catActive ? (catActive === "__none" ? "No category" : catActive) : browse === "quick" ? "Quick sale" : "All items"} action={products.length > 0 ? <div style={{ width: 190 }}><Segmented value={browse} onChange={setBrowse} options={[["quick", "Quick"], ["all", `All (${products.length})`]]} /></div> : null} />
+            {cats.length > 0 && (
+              <div className="cat-bar" role="tablist" aria-label="Categories" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "2px 0 10px", WebkitOverflowScrolling: "touch" }}>
+                {[["", "All items", products.length], ...cats, ...(uncat > 0 ? [["__none", "No category", uncat]] : [])].map(([c, label, count]) => {
+                  const on = catActive === c;
+                  return <button key={c || "all"} type="button" role="tab" aria-selected={on} onClick={() => setCat(c)}
+                    style={{ flex: "0 0 auto", height: 36, padding: "0 14px", borderRadius: 18, fontSize: 13.5, fontWeight: 600, whiteSpace: "nowrap", border: `1px solid ${on ? colors.primary : colors.lineStrong}`, background: on ? colors.primary : colors.surface, color: on ? "var(--on-primary)" : colors.ink }}>{label} <span style={{ opacity: 0.7, fontWeight: 500 }}>{count}</span></button>;
+                })}
+              </div>
+            )}
+            {products.length > 0 && (browse === "all" || catActive) ? (
               <List wide>
-                {allSorted.map((p) => {
+                {catList.map((p) => {
                   const st = getStock(p, activeBranchId);
                   const inCart = (cart.find((i) => i.id === p.id) || {}).qty || 0;
                   return (
@@ -2371,10 +2389,10 @@ function Checkout({ products, setProducts, sales, setSales, customers, setCustom
                   {effectiveUnit(priced.lines.find((x) => x.id === i.id) || i) < i.cost && <div style={{ fontSize: 12, color: colors.red, fontWeight: 600, marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}><AlertTriangle size={13} /> Priced below cost</div>}
                   <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8 }}>
                     <div className="stepper">
-                      <button type="button" aria-label={`Decrease ${i.name}`} onClick={() => updateQty(i.id, i.qty - 1)}><Minus size={16} /></button>
-                      <input className="num" type="number" inputMode="numeric" min="1" aria-label={`Quantity of ${i.name}`} value={qtyDraft[i.id] !== undefined ? qtyDraft[i.id] : i.qty}
+                      <button type="button" aria-label={`Decrease ${i.name}`} onClick={() => updateQty(i.id, Math.round((i.qty - 1) * 1000) / 1000)}><Minus size={16} /></button>
+                      <input className="num" type="number" inputMode="decimal" step="any" min="0" aria-label={`Quantity of ${i.name}`} value={qtyDraft[i.id] !== undefined ? qtyDraft[i.id] : i.qty}
                         onChange={(e) => typeQty(i.id, e.target.value)} onBlur={() => endQty(i.id)} onFocus={(e) => e.target.select()} />
-                      <button type="button" aria-label={`Increase ${i.name}`} onClick={() => updateQty(i.id, i.qty + 1)}><Plus size={16} /></button>
+                      <button type="button" aria-label={`Increase ${i.name}`} onClick={() => updateQty(i.id, Math.round((i.qty + 1) * 1000) / 1000)}><Plus size={16} /></button>
                     </div>
                     <IconButton icon={Trash2} danger label={`Remove ${i.name}`} size={16} onClick={() => removeLine(i.id)} />
                   </div>
@@ -3895,17 +3913,24 @@ function PrinterPanel({ settings, showToast }) {
   );
 }
 
+const SAMPLE_SALE = { id: "sample", invoiceNo: "SAMPLE-001", date: "2026-01-15", time: "2026-01-15T10:30:00", paymentType: "cash", customerName: "", customerPhone: "", amountTendered: 6500, balanceDue: 0, total: 6000, cashierName: "Cashier", items: [{ productId: "a", name: "Bread loaf", qty: 2, price: 1500, discount: 0 }, { productId: "b", name: "Bottled water 75cl", qty: 6, price: 500, discount: 0 }] };
 function ShopSettings({ settings, setSettings, showToast, branches, setBranches, onResetTransactions, onResetEverything, fullState, restoreAll, cloudOn }) {
   const [form, setForm] = useState(settings);
   const [confirmMode, setConfirmMode] = useState(null); // null | "figures" | "everything" | "restore"
   const [confirmText, setConfirmText] = useState("");
   const [restoreData, setRestoreData] = useState(null);
   const fileInputRef = useRef(null);
+  const logoInputRef = useRef(null);
+  const pickLogo = (e) => {
+    const f = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    prepareLogo(f).then((logo) => setForm((prev) => ({ ...prev, logo }))).catch(() => showToast("That file is not a picture. Choose a PNG or JPG.", "err"));
+  };
 
   const save = () => {
     if (!form.shopName.trim()) { showToast("Shop name is required.", "err"); return; }
     setSettings(form);
-    showToast("Shop details saved. They'll appear on your next receipt.");
+    showToast("Saved. Your receipt design, paper size and logo will be used on the next receipt.");
   };
 
   const closeConfirm = () => { setConfirmMode(null); setConfirmText(""); setRestoreData(null); };
@@ -3996,6 +4021,54 @@ function ShopSettings({ settings, setSettings, showToast, branches, setBranches,
             <Field label="Phone number(s)">
               <input style={styles.input} inputMode="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="e.g. 08169500844" />
             </Field>
+            <div style={{ borderTop: `1px solid ${colors.line}`, paddingTop: 14, marginTop: 4 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 2 }}>Receipt look</div>
+              <div style={{ fontSize: 12.5, color: colors.inkSoft, marginBottom: 10 }}>Choose the design, the paper you print on, and add your business logo.</div>
+              <Field label="Business logo">
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ width: 72, height: 72, borderRadius: 12, border: `1px dashed ${colors.lineStrong}`, display: "flex", alignItems: "center", justifyContent: "center", background: "#fff", overflow: "hidden", flex: "0 0 auto" }}>
+                    {form.logo ? <img src={form.logo} alt="Logo" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <ImageIcon size={26} color={colors.inkFaint} />}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <Button variant="secondary" small icon={UploadIcon} onClick={() => logoInputRef.current && logoInputRef.current.click()}>{form.logo ? "Change logo" : "Upload logo"}</Button>
+                    {form.logo && <Button variant="secondary" small onClick={() => setForm({ ...form, logo: "" })}>Remove logo</Button>}
+                  </div>
+                  <input ref={logoInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={pickLogo} />
+                </div>
+                <div style={{ fontSize: 12, color: colors.inkSoft, marginTop: 6 }}>PNG or JPG. It is shrunk automatically. A square or wide logo on a white or transparent background looks best.</div>
+              </Field>
+              <Field label="Receipt design">
+                <div style={{ display: "grid", gap: 8 }}>
+                  {Object.entries(TEMPLATES).map(([k, v]) => (
+                    <button key={k} type="button" onClick={() => setForm({ ...form, receiptTemplate: k })} aria-pressed={(form.receiptTemplate || "classic") === k}
+                      style={{ textAlign: "left", padding: "10px 12px", borderRadius: 12, border: `2px solid ${(form.receiptTemplate || "classic") === k ? colors.primary : colors.line}`, background: colors.surface, color: colors.ink, cursor: "pointer", font: "inherit" }}>
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>{v.label}</div><div style={{ fontSize: 12.5, color: colors.inkSoft }}>{v.hint}</div>
+                    </button>
+                  ))}
+                </div>
+              </Field>
+              <Field label="Paper size">
+                <select style={styles.input} value={form.paperSize || "80"} onChange={(e) => setForm({ ...form, paperSize: e.target.value })}>
+                  {Object.entries(PAPERS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
+                <div style={{ fontSize: 12, color: colors.inkSoft, marginTop: 6 }}>Used when you print from the computer and when you save a receipt as PDF. Bluetooth printers keep their own width setting under Printer.</div>
+              </Field>
+              <Field label="Fine-tune printing (if the printout is shifted or cut)">
+                <div style={{ display: "flex", gap: 10 }}>
+                  <label style={{ flex: 1, fontSize: 12.5, color: colors.inkSoft }}>Receipt width (mm)
+                    <input style={{ ...styles.input, marginTop: 4 }} type="number" inputMode="decimal" min="30" max="210" placeholder={String(paperOf(form).w)} value={form.printWidth || ""} onChange={(e) => setForm({ ...form, printWidth: e.target.value })} />
+                  </label>
+                  <label style={{ flex: 1, fontSize: 12.5, color: colors.inkSoft }}>Move left (mm)
+                    <input style={{ ...styles.input, marginTop: 4 }} type="number" inputMode="decimal" min="-20" max="20" placeholder="0" value={form.printLeft || ""} onChange={(e) => setForm({ ...form, printLeft: e.target.value })} />
+                  </label>
+                </div>
+                <div style={{ fontSize: 12, color: colors.inkSoft, marginTop: 6 }}>Too much space on the left and the right side cut off? Make the width smaller (for example 64) and/or put a minus number in Move left (for example −4). Leave empty for the default.</div>
+              </Field>
+              <div style={{ fontSize: 12.5, fontWeight: 600, margin: "4px 0 6px" }}>Preview</div>
+              <div style={{ background: colors.surface2, borderRadius: 12, padding: 10, overflowX: "auto" }}>
+                <ReceiptSheet preview sale={SAMPLE_SALE} settings={{ ...form, shopName: form.shopName || "My Shop" }} branch={null} isCredit={false} />
+              </div>
+            </div>
             <Button full icon={Save} onClick={save}>Save shop details</Button>
           </div>
         </div>

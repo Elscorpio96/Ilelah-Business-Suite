@@ -265,7 +265,7 @@ export const globalCss = `
     .appbar, .bottom-nav, .toast { display: none !important; }
     body * { visibility: hidden; }
     #printable-receipt, #printable-receipt * { visibility: visible; }
-    #printable-receipt { position: absolute; top: 0; left: 0; width: 72mm; max-width: 72mm; padding: 4mm !important; font-size: 11px; }
+    #printable-receipt { position: absolute; top: 0; left: 0; font-size: 11px; }
   }
 `;
 

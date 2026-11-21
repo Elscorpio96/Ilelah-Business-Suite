@@ -179,3 +179,18 @@ Phones only accept an in-place update when the APK is signed with the SAME key a
 * **Cloud mode:** run `supabase/migrations/0012_edit_sale_details.sql` once in the SQL Editor (after 0011) **before** installing the new app on phones. Safe to run twice. Other phones pick the edit up on their next sync.
 * **Purchases (v1.18):** New purchase order now works like the Sell page: search or tap each item that arrived (tap again to add more), then adjust with the − / + stepper and the cost each. Scan still adds 1 per scan. No database change.
 * **Backup to phone no longer closes the app (v1.18):** the backup is first written to a private temp file, and only the file name goes to Android's file picker. Before this, a big backup was kept in Android's saved state while the picker was open, which made the phone close the app when you came back.
+
+## 21. v1.19: receipt designs, paper sizes and business logo
+* **Settings → Shop details → Receipt look** (owner): upload a **business logo** (PNG/JPG, shrunk automatically), pick a **receipt design** (Classic, Compact, Business invoice) and a **paper size** (58 mm roll, 80 mm roll, A5, A4). A live preview shows the result before you save.
+* The logo, design and paper size apply to the receipt on screen, **Print receipt** on the computer, **Save PDF** (Windows app), the phone's PDF/print and **Share as image** (logo only). Roll sizes are cut to the exact length of the receipt; A5/A4 print as normal pages.
+* Windows app: printing now goes through the app, so the chosen paper size is used and a **Save PDF** button appears on every receipt.
+* These settings are saved on each device (and inside backups). They are not part of the cloud shop record, so set them once on each computer/phone.
+* Bluetooth thermal printers keep their own width setting (Settings → Receipt printer). No database change.
+* **Printer shifted or cut (v1.19.1):** roll receipts now print with no page margin and a narrower body (80 mm roll: 70 mm, 58 mm roll: 48 mm) because thermal printers add their own unprintable edge. If your printer still shifts the text, use **Settings → Shop details → Receipt look → Fine-tune printing**: make *Receipt width* smaller and/or put a minus number in *Move left* (for example 64 and −4).
+
+## 22. v1.20: category bar, half quantities, bulk delete, refused-edit warning
+* **Sell page category bar:** chips at the top (All items, each category, No category) with item counts. Tap a category to list only its items; tap All items to go back. Categories come from the Category field on each product.
+* **Half / decimal quantities (2.5):** typing 2.5 in the cart used to show 2.5 but bill 2. It now bills exactly 2.5 x price. The - / + steppers move by 1. No database change (the cloud already stores quantities to 3 decimals).
+* **Stock: bulk delete.** Inventory -> **Select items to delete**: tick items (or **All shown**, which respects search/filter), Delete, confirm. **Undo** appears afterwards. Past sales keep the deleted products.
+* **Edited receipt reverted (Cloud mode):** if the cloud refuses an edit (for example a cashier adding items, which only the owner may do, or an edit after the sale day), the phone kept showing the edited receipt while the cloud and other phones kept the old one. Now a red banner appears on every page while any change is refused, and **Discard and restore from cloud** in the sync panel drops the refused changes and brings back the cloud version. The owner must redo the edit.
+* **supabase-backup emails:** the nightly backup now skips quietly (no failure email) until the secrets SUPABASE_DB_URL and BACKUP_PASSPHRASE are added.

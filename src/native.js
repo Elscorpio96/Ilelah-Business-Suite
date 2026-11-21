@@ -67,6 +67,13 @@ export async function shareText(text) {
   } catch (e) {}
 }
 
+// Windows app: print through the shell so the chosen paper size is used.
+if (typeof window !== "undefined" && window.ilelahDesktop) {
+  window.print = () => { window.ilelahDesktop.print().catch((e) => console.error("print failed", e)); };
+}
+export const hasDesktopShell = () => typeof window !== "undefined" && !!window.ilelahDesktop;
+export const desktopPdf = (name) => window.ilelahDesktop.savePdf(name);
+
 if (isNative) {
   // window.print() does nothing inside an Android WebView, so route it to
   // Android's own print dialog (print to a printer or "Save as PDF").
