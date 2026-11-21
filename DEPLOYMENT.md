@@ -187,3 +187,10 @@ Phones only accept an in-place update when the APK is signed with the SAME key a
 * These settings are saved on each device (and inside backups). They are not part of the cloud shop record, so set them once on each computer/phone.
 * Bluetooth thermal printers keep their own width setting (Settings → Receipt printer). No database change.
 * **Printer shifted or cut (v1.19.1):** roll receipts now print with no page margin and a narrower body (80 mm roll: 70 mm, 58 mm roll: 48 mm) because thermal printers add their own unprintable edge. If your printer still shifts the text, use **Settings → Shop details → Receipt look → Fine-tune printing**: make *Receipt width* smaller and/or put a minus number in *Move left* (for example 64 and −4).
+
+## 22. v1.20: category bar, half quantities, bulk delete, refused-edit warning
+* **Sell page category bar:** chips at the top (All items, each category, No category) with item counts. Tap a category to list only its items; tap All items to go back. Categories come from the Category field on each product.
+* **Half / decimal quantities (2.5):** typing 2.5 in the cart used to show 2.5 but bill 2. It now bills exactly 2.5 x price. The - / + steppers move by 1. No database change (the cloud already stores quantities to 3 decimals).
+* **Stock: bulk delete.** Inventory -> **Select items to delete**: tick items (or **All shown**, which respects search/filter), Delete, confirm. **Undo** appears afterwards. Past sales keep the deleted products.
+* **Edited receipt reverted (Cloud mode):** if the cloud refuses an edit (for example a cashier adding items, which only the owner may do, or an edit after the sale day), the phone kept showing the edited receipt while the cloud and other phones kept the old one. Now a red banner appears on every page while any change is refused, and **Discard and restore from cloud** in the sync panel drops the refused changes and brings back the cloud version. The owner must redo the edit.
+* **supabase-backup emails:** the nightly backup now skips quietly (no failure email) until the secrets SUPABASE_DB_URL and BACKUP_PASSPHRASE are added.

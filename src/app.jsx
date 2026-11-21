@@ -400,7 +400,7 @@ function App({ license }) {
   const multiBranch = branches.length > 1;
   const lowStockCount = products.filter((p) => getStock(p, activeBranchId) <= p.lowStock).length;
 
-  const syncProps = cloudOn ? { cloudOn: true, rt, stats: sync.stats, busy: sync.busy, online: sync.online, lastAt: sync.lastAt, error: sync.error, openCenter: () => setSyncOpen(true), syncNow: () => syncNow(true), refresh: () => setSync((x) => ({ ...x, stats: rt.outbox.stats() })) } : null;
+  const syncProps = cloudOn ? { cloudOn: true, rt, stats: sync.stats, busy: sync.busy, online: sync.online, lastAt: sync.lastAt, error: sync.error, openCenter: () => setSyncOpen(true), syncNow: () => syncNow(true), restoreFromCloud: () => { try { const ls = window.localStorage; [CURSOR_KEY, STAMP_KEY, STOCK_CURSOR_KEY, "tally:cloud:lastfull"].forEach((k) => ls.removeItem(k)); } catch (_) {} return syncNow(true); }, refresh: () => setSync((x) => ({ ...x, stats: rt.outbox.stats() })) } : null;
   const onResetTransactions = () => {
     setSales([]);
     setPurchases([]);
@@ -470,6 +470,12 @@ function App({ license }) {
       />
       {syncOpen && syncProps && <SyncCenter sync={syncProps} onClose={() => setSyncOpen(false)} />}
       <main className="page" key={tab}>
+        {cloudOn && sync.stats && sync.stats.failed > 0 && (
+          <button type="button" onClick={() => setSyncOpen(true)} style={{ display: "flex", gap: 8, alignItems: "flex-start", width: "100%", textAlign: "left", margin: "0 0 12px", padding: "12px 14px", borderRadius: 12, border: `1px solid ${colors.red}`, background: colors.redSoft, color: colors.red, fontWeight: 600, fontSize: 14, lineHeight: 1.4 }}>
+            <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>{sync.stats.failed} change{sync.stats.failed === 1 ? " was" : "s were"} refused by the cloud, so other phones may not see {sync.stats.failed === 1 ? "it" : "them"} (for example an edited receipt). Tap to review.</span>
+          </button>
+        )}
         {tab === "dashboard" && isAdmin && (
           <AdminDashboard products={products} sales={sales} purchases={purchases} expenses={expenses} customers={customers} creditPayments={creditPayments} branches={branches} multiBranch={multiBranch} setTab={setTab} goAction={goAction} currentUser={currentUser} />
         )}
@@ -1246,6 +1252,9 @@ function Inventory({ products, setProducts, showToast, readOnly, activeBranchId,
   const [scanTarget, setScanTarget] = useState(null); // "form" | "search"
   const [filter, setFilter] = useState("all");
   const [toDelete, setToDelete] = useState(null);
+  const [selMode, setSelMode] = useState(false);
+  const [sel, setSel] = useState(() => new Set());
+  const [bulkAsk, setBulkAsk] = useState(false);
   const belowCount = !readOnly ? products.filter(isBelowCost).length : 0;
   const branchName = (branches.find((b) => b.id === activeBranchId) || {}).name || "";
 
@@ -1309,6 +1318,17 @@ function Inventory({ products, setProducts, showToast, readOnly, activeBranchId,
     showToast("Product removed.", "ok", 7000, gone ? { label: "Undo", run: () => { setProducts((prev) => (prev.some((p) => p.id === gone.id) ? prev : [...prev, gone]), "server-stock"); showToast("Product restored."); } } : undefined);
   };
 
+  const exitSel = () => { setSelMode(false); setSel(new Set()); setBulkAsk(false); };
+  const toggleSel = (id) => setSel((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const allShownSelected = filtered.length > 0 && filtered.every((p) => sel.has(p.id));
+  const toggleAllShown = () => setSel(allShownSelected ? new Set() : new Set(filtered.map((p) => p.id)));
+  const removeMany = () => {
+    const gone = products.filter((p) => sel.has(p.id)); if (!gone.length) return;
+    setProducts((prev) => prev.filter((p) => !sel.has(p.id)));
+    showToast(`${gone.length} product${gone.length === 1 ? "" : "s"} removed.`, "ok", 9000, { label: "Undo", run: () => { setProducts((prev) => [...prev, ...gone.filter((g) => !prev.some((p) => p.id === g.id))], "server-stock"); showToast("Products restored."); } });
+    exitSel();
+  };
+
   const chipOptions = [["all", "All", products.length], ["low", "Low stock", lowCount], ["out", "Out of stock", outCount]];
   if (!readOnly) chipOptions.push(["below", "Below cost", belowCount], ["pinned", "Pinned", pinCount]);
 
@@ -1324,6 +1344,20 @@ function Inventory({ products, setProducts, showToast, readOnly, activeBranchId,
         <div style={{ display: "flex", gap: 10 }}>
           <Button icon={Plus} onClick={openAdd} style={{ flex: 1 }}>Add product</Button>
           <Button variant="secondary" icon={UploadIcon} onClick={() => setImporting(true)} style={{ flex: 1 }}>Import / export</Button>
+        </div>
+      )}
+      {!readOnly && products.length > 0 && !selMode && (
+        <div><Button small variant="secondary" icon={Trash2} onClick={() => setSelMode(true)}>Select items to delete</Button></div>
+      )}
+      {selMode && (
+        <div className="card" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "10px 12px" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 14 }}>
+            <input type="checkbox" checked={allShownSelected} onChange={toggleAllShown} style={{ width: 20, height: 20 }} aria-label="Select all shown" />
+            All shown ({filtered.length})
+          </label>
+          <span style={{ flex: 1, fontSize: 13.5, color: colors.inkSoft }}>{sel.size} selected</span>
+          <Button small variant="secondary" onClick={exitSel}>Cancel</Button>
+          <Button small variant="danger" icon={Trash2} disabled={sel.size === 0} onClick={() => setBulkAsk(true)}>Delete{sel.size ? ` (${sel.size})` : ""}</Button>
         </div>
       )}
       {scanTarget && (
@@ -1392,6 +1426,14 @@ function Inventory({ products, setProducts, showToast, readOnly, activeBranchId,
               </>
             );
             if (readOnly) return <div key={p.id} className="row">{content}</div>;
+            if (selMode) return (
+              <div key={p.id} className="row-split">
+                <button type="button" className="row" role="checkbox" aria-checked={sel.has(p.id)} onClick={() => toggleSel(p.id)} aria-label={`Select ${p.name}`} style={sel.has(p.id) ? { background: colors.primarySoft } : undefined}>
+                  <input type="checkbox" readOnly checked={sel.has(p.id)} tabIndex={-1} style={{ width: 22, height: 22, flex: "0 0 22px", pointerEvents: "none" }} />
+                  {content}
+                </button>
+              </div>
+            );
             return (
               <div key={p.id} className="row-split">
                 <button type="button" className="row" onClick={() => openEdit(p)} aria-label={`Edit ${p.name}`}>{content}</button>
@@ -1455,6 +1497,17 @@ function Inventory({ products, setProducts, showToast, readOnly, activeBranchId,
         </Modal>
       )}
 
+      {bulkAsk && (
+        <Modal title={`Delete ${sel.size} product${sel.size === 1 ? "" : "s"}?`} onClose={() => setBulkAsk(false)}>
+          <p style={{ marginTop: 0, color: colors.inkSoft, lineHeight: 1.5 }}>
+            {sel.size} selected product{sel.size === 1 ? "" : "s"} will be removed from your stock list. Past sales that include them are kept. You can undo right after.
+          </p>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <Button variant="secondary" onClick={() => setBulkAsk(false)}>Cancel</Button>
+            <Button variant="danger" icon={Trash2} onClick={removeMany}>Delete {sel.size}</Button>
+          </div>
+        </Modal>
+      )}
       {toDelete && (
         <Modal title="Delete product?" onClose={() => setToDelete(null)}>
           <p style={{ color: colors.inkSoft, lineHeight: 1.5, margin: "4px 0 0" }}>
@@ -1971,8 +2024,13 @@ function Checkout({ products, setProducts, sales, setSales, customers, setCustom
   const [quickMore, setQuickMore] = useState(false);
   const [browse, setBrowse] = useState("quick");
   const [qtyDraft, setQtyDraft] = useState({});
+  const [cat, setCat] = useState("");   // "" = no category filter; "__none" = items without a category
+  const cats = useMemo(() => { const m = {}; products.forEach((p) => { const c = (p.category || "").trim(); if (c) m[c] = (m[c] || 0) + 1; }); return Object.keys(m).sort((a, b) => a.localeCompare(b)).map((c) => [c, c, m[c]]); }, [products]);
+  const uncat = useMemo(() => products.filter((p) => !(p.category || "").trim()).length, [products]);
+  const catActive = cat && (cat === "__none" ? uncat > 0 : cats.some(([c]) => c === cat)) ? cat : "";
   const isOwner = currentUser.role === "admin";
   const allSorted = useMemo(() => [...products].sort((a, b) => a.name.localeCompare(b.name)), [products]);
+  const catList = useMemo(() => (catActive ? allSorted.filter((p) => (catActive === "__none" ? !(p.category || "").trim() : (p.category || "").trim() === catActive)) : allSorted), [allSorted, catActive]);
   const quick = useMemo(() => pickQuickProducts(products, sales, todayStr(), quickMore ? 60 : 12), [products, sales, quickMore]);
 
   useEffect(() => {
@@ -2040,7 +2098,7 @@ function Checkout({ products, setProducts, sales, setSales, customers, setCustom
 
   const typeQty = (id, text) => {
     setQtyDraft((d) => ({ ...d, [id]: text }));
-    const n = Math.floor(Number(text));
+    const n = Math.round(Number(text) * 1000) / 1000;   // halves etc. are allowed (2.5 kg, 0.5 bag)
     if (text === "" || !(n > 0)) return;
     const product = products.find((p) => p.id === id);
     const stock = product ? getStock(product, activeBranchId) : n;
@@ -2233,10 +2291,19 @@ function Checkout({ products, setProducts, sales, setSales, customers, setCustom
         )}
         {results.length === 0 && !query.trim() && (
           <div>
-            <SectionHeader title={browse === "quick" ? "Quick sale" : "All items"} action={products.length > 0 ? <div style={{ width: 190 }}><Segmented value={browse} onChange={setBrowse} options={[["quick", "Quick"], ["all", `All (${products.length})`]]} /></div> : null} />
-            {products.length > 0 && browse === "all" ? (
+            <SectionHeader title={catActive ? (catActive === "__none" ? "No category" : catActive) : browse === "quick" ? "Quick sale" : "All items"} action={products.length > 0 ? <div style={{ width: 190 }}><Segmented value={browse} onChange={setBrowse} options={[["quick", "Quick"], ["all", `All (${products.length})`]]} /></div> : null} />
+            {cats.length > 0 && (
+              <div className="cat-bar" role="tablist" aria-label="Categories" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "2px 0 10px", WebkitOverflowScrolling: "touch" }}>
+                {[["", "All items", products.length], ...cats, ...(uncat > 0 ? [["__none", "No category", uncat]] : [])].map(([c, label, count]) => {
+                  const on = catActive === c;
+                  return <button key={c || "all"} type="button" role="tab" aria-selected={on} onClick={() => setCat(c)}
+                    style={{ flex: "0 0 auto", height: 36, padding: "0 14px", borderRadius: 18, fontSize: 13.5, fontWeight: 600, whiteSpace: "nowrap", border: `1px solid ${on ? colors.primary : colors.lineStrong}`, background: on ? colors.primary : colors.surface, color: on ? "var(--on-primary)" : colors.ink }}>{label} <span style={{ opacity: 0.7, fontWeight: 500 }}>{count}</span></button>;
+                })}
+              </div>
+            )}
+            {products.length > 0 && (browse === "all" || catActive) ? (
               <List wide>
-                {allSorted.map((p) => {
+                {catList.map((p) => {
                   const st = getStock(p, activeBranchId);
                   const inCart = (cart.find((i) => i.id === p.id) || {}).qty || 0;
                   return (
@@ -2322,10 +2389,10 @@ function Checkout({ products, setProducts, sales, setSales, customers, setCustom
                   {effectiveUnit(priced.lines.find((x) => x.id === i.id) || i) < i.cost && <div style={{ fontSize: 12, color: colors.red, fontWeight: 600, marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}><AlertTriangle size={13} /> Priced below cost</div>}
                   <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8 }}>
                     <div className="stepper">
-                      <button type="button" aria-label={`Decrease ${i.name}`} onClick={() => updateQty(i.id, i.qty - 1)}><Minus size={16} /></button>
-                      <input className="num" type="number" inputMode="numeric" min="1" aria-label={`Quantity of ${i.name}`} value={qtyDraft[i.id] !== undefined ? qtyDraft[i.id] : i.qty}
+                      <button type="button" aria-label={`Decrease ${i.name}`} onClick={() => updateQty(i.id, Math.round((i.qty - 1) * 1000) / 1000)}><Minus size={16} /></button>
+                      <input className="num" type="number" inputMode="decimal" step="any" min="0" aria-label={`Quantity of ${i.name}`} value={qtyDraft[i.id] !== undefined ? qtyDraft[i.id] : i.qty}
                         onChange={(e) => typeQty(i.id, e.target.value)} onBlur={() => endQty(i.id)} onFocus={(e) => e.target.select()} />
-                      <button type="button" aria-label={`Increase ${i.name}`} onClick={() => updateQty(i.id, i.qty + 1)}><Plus size={16} /></button>
+                      <button type="button" aria-label={`Increase ${i.name}`} onClick={() => updateQty(i.id, Math.round((i.qty + 1) * 1000) / 1000)}><Plus size={16} /></button>
                     </div>
                     <IconButton icon={Trash2} danger label={`Remove ${i.name}`} size={16} onClick={() => removeLine(i.id)} />
                   </div>

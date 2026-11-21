@@ -9,20 +9,30 @@ on:
 jobs:
   backup:
     runs-on: ubuntu-latest
+    env:
+      HAS_SECRETS: ${{ secrets.SUPABASE_DB_URL != '' && secrets.BACKUP_PASSPHRASE != '' }}
     steps:
+      - name: Skip when backup secrets are not set
+        if: env.HAS_SECRETS != 'true'
+        run: echo "::notice::Backup skipped - add SUPABASE_DB_URL and BACKUP_PASSPHRASE in Settings > Secrets > Actions to turn nightly backups on."
       - uses: actions/checkout@v4
+        if: env.HAS_SECRETS == 'true'
       - name: Install PostgreSQL client 17
+        if: env.HAS_SECRETS == 'true'
         run: |
           sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
           wget -qO- https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo tee /etc/apt/trusted.gpg.d/pgdg.asc >/dev/null
           sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
       - name: Dump
+        if: env.HAS_SECRETS == 'true'
         env: { SUPABASE_DB_URL: "${{ secrets.SUPABASE_DB_URL }}" }
         run: PATH=/usr/lib/postgresql/17/bin:$PATH sh supabase/backup/backup.sh out
       - name: Encrypt
+        if: env.HAS_SECRETS == 'true'
         env: { P: "${{ secrets.BACKUP_PASSPHRASE }}" }
         run: |
           for f in out/*.dump; do gpg --batch --yes --pinentry-mode loopback --passphrase "$P" --symmetric --cipher-algo AES256 -o "$f.gpg" "$f"; rm "$f"; done
           ls -l out
       - uses: actions/upload-artifact@v4
+        if: env.HAS_SECRETS == 'true'
         with: { name: ilelah-backup, path: out/*.gpg, retention-days: 30 }

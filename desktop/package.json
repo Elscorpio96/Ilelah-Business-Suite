@@ -1,7 +1,7 @@
 {
   "name": "ilelah-business-suite-desktop",
   "productName": "Ilelah Business Suite",
-  "version": "1.19.1",
+  "version": "1.20.0",
   "description": "Ilelah Business Suite for Windows (offline Local mode with optional Cloud mode)",
   "author": "Ilelah Technologies",
   "main": "main.js",

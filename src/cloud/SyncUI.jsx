@@ -56,9 +56,9 @@ export function SyncCenter({ sync, onClose }) {
         ) : <div style={styles.emptyNote}>Nothing is waiting. Everything on this phone has reached the cloud.</div>}
         {open.some((i) => i.status === "failed") ? (
           <div style={styles.stack}>
-            <div style={styles.emptyNote}><strong>Failed items stay on this phone</strong> but are not in the cloud. Try again, or discard them from the queue (the record stays on the phone and is not sent). New data from other phones is not downloaded while anything is failed or waiting.</div>
+            <div style={styles.emptyNote}><strong>Failed items stay on this phone</strong> but are not in the cloud, so other phones still see the old version (for example the old receipt). Try again, or choose <strong>Discard and restore from cloud</strong> to throw the failed changes away and bring back the cloud's version on this phone. New data from other phones is not downloaded while anything is failed or waiting.</div>
             <div className="sheet-actions">
-              <Button variant="danger" onClick={async () => { if (await app.confirm({ title: "Discard the failed items?", text: "They will stay on this phone but never be sent.", okLabel: "Discard", danger: true })) { open.filter((i) => i.status === "failed").forEach((i) => sync.rt.outbox.discard(i.id)); sync.refresh(); } }}>Discard failed</Button>
+              <Button variant="danger" onClick={async () => { if (await app.confirm({ title: "Discard and restore from cloud?", text: "The failed changes are dropped and this phone goes back to what is saved in the cloud. Anything you edited that was refused will need to be done again by the owner.", okLabel: "Discard and restore", danger: true })) { open.filter((i) => i.status === "failed").forEach((i) => sync.rt.outbox.discard(i.id)); sync.refresh(); if (sync.restoreFromCloud) sync.restoreFromCloud(); } }}>Discard and restore from cloud</Button>
               <Button onClick={() => { open.filter((i) => i.status === "failed").forEach((i) => sync.rt.outbox.retry(i.id)); sync.syncNow(); }}>Try again</Button>
             </div>
           </div>
