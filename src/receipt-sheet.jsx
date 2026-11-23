@@ -1,7 +1,7 @@
 import React from "react";
 import { styles } from "./styles.js";
 import { colors, money } from "./theme.js";
-import { lineGross, lineDiscount, saleDiscount, saleSubtotal, saleQty, saleRefunded, saleNet } from "./lines.js";
+import { lineGross, lineDiscount, saleDiscount, saleSubtotal, saleQty, saleRefunded, saleCashBack, saleNet } from "./lines.js";
 
 // Paper the receipt is printed on. `w`/`m`: printable width and page margin in mm. zoom scales the type for bigger paper.
 export const PAPERS = {
@@ -65,6 +65,7 @@ function Totals({ sale, isCredit, size = 11.5 }) {
       <div style={{ ...styles.receiptTotalRow, fontSize: 15 }}><span>Amount Due</span><span style={styles.mono}>{money(sale.total)}</span></div>
       {saleRefunded(sale) > 0 && <>{row("Returned by customer", "−" + money(saleRefunded(sale)), { color: colors.red })}{row("Net after returns", money(saleNet(sale)), { fontWeight: 700 })}</>}
       {row(isCredit ? "Deposit Paid" : "Payment: Cash", money(sale.amountTendered))}
+      {saleCashBack(sale) > 0 && row("Cash given back", "−" + money(saleCashBack(sale)), { color: colors.red })}
       {row(isCredit ? "AMOUNT OWED" : "Balance", money(sale.balanceDue), isCredit ? { color: colors.red, fontWeight: 700, fontSize: size + 1 } : {})}
       {Number(sale.prevBalance) > 0 && <>{row("Owed from before", money(sale.prevBalance))}{row("TOTAL OWED NOW", money(Number(sale.prevBalance) + Number(sale.balanceDue || 0)), { color: colors.red, fontWeight: 700 })}</>}
     </>

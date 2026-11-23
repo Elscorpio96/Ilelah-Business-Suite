@@ -14,7 +14,7 @@ import { LOGO_MARK } from "./logo.js";
 import { ReceiptSheet, ReceiptPageStyle, Logo as ReceiptLogo, PAPERS, TEMPLATES, paperOf, printWidthOf, prepareLogo } from "./receipt-sheet.jsx";
 import { hasPin, setPin, clearPin, isLockedFlag, setLockedFlag } from "./security.js";
 import { LockScreen, OwnerApproval, PinSetup } from "./security.jsx";
-import { lineGross, lineDiscount, lineTotal, saleSubtotal, saleDiscount, saleQty, saleNet, saleNetCost, saleRefunded, saleReturns, buildReturn, returnableQty, discountAmount, priceCart, canEditSale, effectiveUnit, round2 } from "./lines.js";
+import { lineGross, lineDiscount, lineTotal, saleSubtotal, saleDiscount, saleQty, saleNet, saleNetCost, saleRefunded, saleCashBack, saleReturns, buildReturn, returnableQty, discountAmount, priceCart, canEditSale, effectiveUnit, round2 } from "./lines.js";
 import { LICENSE_CONFIG } from "./license-config.js";
 import { localDateStr } from "./dates.js";
 import { CloudPanel } from "./cloud/CloudPanel.jsx";
@@ -1661,6 +1661,7 @@ function receiptText(sale, settings, branch) {
   lines.push(`Amount Due: ${money(sale.total)}`);
   if (saleRefunded(sale) > 0) { lines.push(`Returned: -${money(saleRefunded(sale))}`); lines.push(`Net after returns: ${money(saleNet(sale))}`); }
   lines.push(isCredit ? `Deposit Paid: ${money(sale.amountTendered)}` : `Payment: Cash ${money(sale.amountTendered)}`);
+  if (saleCashBack(sale) > 0) lines.push(`Cash given back: -${money(saleCashBack(sale))}`);
   lines.push(isCredit ? `AMOUNT OWED (CREDIT): ${money(sale.balanceDue)}` : `Balance: ${money(sale.balanceDue)}`);
   if (Number(sale.prevBalance) > 0) { lines.push(`Owed from before: ${money(sale.prevBalance)}`); lines.push(`TOTAL OWED NOW: ${money(Number(sale.prevBalance) + Number(sale.balanceDue || 0))}`); }
   lines.push("----------------------------------------");

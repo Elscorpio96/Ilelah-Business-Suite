@@ -1,4 +1,4 @@
-import { lineDiscount, saleDiscount, saleSubtotal, saleQty, saleRefunded, saleNet } from "./lines.js";
+import { lineDiscount, saleDiscount, saleSubtotal, saleQty, saleRefunded, saleCashBack, saleNet } from "./lines.js";
 // ESC/POS receipt builder for 58 mm (32 chars) and 80 mm (48 chars) thermal printers.
 // Pure functions: no Android code in here, so it can be tested anywhere.
 const ESC = 0x1b, GS = 0x1d, LF = 0x0a;
@@ -100,6 +100,7 @@ export function saleReceipt(sale, settings, branch, { width = 32, money }) {
   if (saleRefunded(sale) > 0) { e.lr("Returned", "-" + m(saleRefunded(sale))); e.bold(true).lr("NET", m(saleNet(sale))).bold(false); }
   if (credit) {
     e.lr("Deposit paid", m(sale.amountTendered));
+    if (saleCashBack(sale) > 0) e.lr("Cash given back", "-" + m(saleCashBack(sale)));
     e.bold(true).lr("AMOUNT OWED", m(sale.balanceDue)).bold(false);
   } else {
     e.lr("Cash received", m(sale.amountTendered));
