@@ -8,7 +8,8 @@ export function asciiSafe(s) {
   return String(s == null ? "" : s)
     .replace(/₦/g, "N").replace(/[–—−]/g, "-").replace(/[‘’‚]/g, "'").replace(/[“”„]/g, '"')
     .replace(/×/g, "x").replace(/[·•]/g, "-").replace(/…/g, "...")
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/½/g, " 1/2").replace(/¼/g, " 1/4").replace(/¾/g, " 3/4").replace(/″/g, '"').replace(/′/g, "'").replace(/°/g, "o")
+    .normalize("NFKD").replace(/\u2044/g, "/").replace(/[\u0300-\u036f]/g, "")   // NFKD turns 1½ into 1 1/2, ² into 2, etc.
     .replace(/[^\x20-\x7e\n]/g, "?");
 }
 
