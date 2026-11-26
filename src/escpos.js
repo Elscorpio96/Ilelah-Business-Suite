@@ -1,4 +1,4 @@
-import { lineDiscount, saleDiscount, saleSubtotal, saleQty, saleRefunded, saleNet } from "./lines.js";
+import { lineDiscount, saleDiscount, saleSubtotal, saleQty, saleRefunded, saleCashBack, saleNet } from "./lines.js";
 // ESC/POS receipt builder for 58 mm (32 chars) and 80 mm (48 chars) thermal printers.
 // Pure functions: no Android code in here, so it can be tested anywhere.
 const ESC = 0x1b, GS = 0x1d, LF = 0x0a;
@@ -8,7 +8,8 @@ export function asciiSafe(s) {
   return String(s == null ? "" : s)
     .replace(/₦/g, "N").replace(/[–—−]/g, "-").replace(/[‘’‚]/g, "'").replace(/[“”„]/g, '"')
     .replace(/×/g, "x").replace(/[·•]/g, "-").replace(/…/g, "...")
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/½/g, " 1/2").replace(/¼/g, " 1/4").replace(/¾/g, " 3/4").replace(/″/g, '"').replace(/′/g, "'").replace(/°/g, "o")
+    .normalize("NFKD").replace(/\u2044/g, "/").replace(/[\u0300-\u036f]/g, "")   // NFKD turns 1½ into 1 1/2, ² into 2, etc.
     .replace(/[^\x20-\x7e\n]/g, "?");
 }
 
@@ -100,6 +101,7 @@ export function saleReceipt(sale, settings, branch, { width = 32, money }) {
   if (saleRefunded(sale) > 0) { e.lr("Returned", "-" + m(saleRefunded(sale))); e.bold(true).lr("NET", m(saleNet(sale))).bold(false); }
   if (credit) {
     e.lr("Deposit paid", m(sale.amountTendered));
+    if (saleCashBack(sale) > 0) e.lr("Cash given back", "-" + m(saleCashBack(sale)));
     e.bold(true).lr("AMOUNT OWED", m(sale.balanceDue)).bold(false);
   } else {
     e.lr("Cash received", m(sale.amountTendered));

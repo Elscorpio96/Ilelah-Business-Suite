@@ -14,7 +14,7 @@ import { LOGO_MARK } from "./logo.js";
 import { ReceiptSheet, ReceiptPageStyle, Logo as ReceiptLogo, PAPERS, TEMPLATES, paperOf, printWidthOf, prepareLogo } from "./receipt-sheet.jsx";
 import { hasPin, setPin, clearPin, isLockedFlag, setLockedFlag } from "./security.js";
 import { LockScreen, OwnerApproval, PinSetup } from "./security.jsx";
-import { lineGross, lineDiscount, lineTotal, saleSubtotal, saleDiscount, saleQty, saleNet, saleNetCost, saleRefunded, saleReturns, buildReturn, returnableQty, discountAmount, priceCart, canEditSale, effectiveUnit, round2 } from "./lines.js";
+import { lineGross, lineDiscount, lineTotal, saleSubtotal, saleDiscount, saleQty, saleNet, saleNetCost, saleRefunded, saleCashBack, saleReturns, buildReturn, returnableQty, discountAmount, priceCart, canEditSale, effectiveUnit, round2 } from "./lines.js";
 import { LICENSE_CONFIG } from "./license-config.js";
 import { localDateStr } from "./dates.js";
 import { CloudPanel } from "./cloud/CloudPanel.jsx";
@@ -1661,6 +1661,7 @@ function receiptText(sale, settings, branch) {
   lines.push(`Amount Due: ${money(sale.total)}`);
   if (saleRefunded(sale) > 0) { lines.push(`Returned: -${money(saleRefunded(sale))}`); lines.push(`Net after returns: ${money(saleNet(sale))}`); }
   lines.push(isCredit ? `Deposit Paid: ${money(sale.amountTendered)}` : `Payment: Cash ${money(sale.amountTendered)}`);
+  if (saleCashBack(sale) > 0) lines.push(`Cash given back: -${money(saleCashBack(sale))}`);
   lines.push(isCredit ? `AMOUNT OWED (CREDIT): ${money(sale.balanceDue)}` : `Balance: ${money(sale.balanceDue)}`);
   if (Number(sale.prevBalance) > 0) { lines.push(`Owed from before: ${money(sale.prevBalance)}`); lines.push(`TOTAL OWED NOW: ${money(Number(sale.prevBalance) + Number(sale.balanceDue || 0))}`); }
   lines.push("----------------------------------------");
@@ -2988,23 +2989,24 @@ function SalesHistory({ sales, setSales, currentUser, isAdmin, branches, multiBr
     if (r === "today") { setFrom(today); setTo(today); }
     else if (r === "yesterday") { setFrom(dayOffset(1)); setTo(dayOffset(1)); }
     else if (r === "week") { setFrom(dayOffset(6)); setTo(today); }
+    else if (r === "all") { setFrom("0000-01-01"); setTo("9999-12-31"); }
   };
   const mine = (s) => (s.cashierId ? s.cashierId === currentUser.id : s.cashierName === currentUser.name);
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const editedDay = (s) => (s.edited && s.editedAt ? new Date(s.editedAt).toLocaleDateString("en-CA") : "");
-    return sales.filter((s) => (isAdmin || mine(s)) && ((s.date >= from && s.date <= to) || (editedDay(s) >= from && editedDay(s) <= to && editedDay(s) !== "")) && (!onlyEdited || s.edited) && (branchFilter === "all" || s.branchId === branchFilter)
+    return sales.filter((s) => (isAdmin || mine(s)) && (range === "all" || needle || (s.date >= from && s.date <= to) || (editedDay(s) >= from && editedDay(s) <= to && editedDay(s) !== "")) && (!onlyEdited || s.edited) && (branchFilter === "all" || s.branchId === branchFilter)
       && (!needle || (s.customerName || "").toLowerCase().includes(needle) || String(s.invoiceNo).toLowerCase().includes(needle) || (s.items || []).some((i) => i.name.toLowerCase().includes(needle))))
       .sort((a, b) => (a.time < b.time ? 1 : -1));
-  }, [sales, from, to, q, branchFilter, isAdmin, currentUser, onlyEdited]);
-  const inRange = rows.filter((s) => s.date >= from && s.date <= to);
+  }, [sales, from, to, q, range, branchFilter, isAdmin, currentUser, onlyEdited]);
+  const inRange = (range === "all" || q.trim()) ? rows : rows.filter((s) => s.date >= from && s.date <= to);
   const sum = inRange.reduce((a, s) => a + saleNet(s), 0);
   const disc = inRange.reduce((a, s) => a + saleDiscount(s.items), 0);
   const viewSale = viewId ? sales.find((s) => s.id === viewId) : null;
   return (
     <div style={styles.stack}>
       <div className="chips" style={{ margin: 0, padding: 0 }}>
-        {[["today", "Today"], ["yesterday", "Yesterday"], ["week", "7 days"], ["custom", "Pick dates"]].map(([k, l]) => <button key={k} type="button" className={"chip" + (range === k ? " on" : "")} onClick={() => pick(k)}>{l}</button>)}
+        {[["today", "Today"], ["yesterday", "Yesterday"], ["week", "7 days"], ["custom", "Pick dates"], ["all", "All time"]].map(([k, l]) => <button key={k} type="button" className={"chip" + (range === k ? " on" : "")} onClick={() => pick(k)}>{l}</button>)}
         <button type="button" className={"chip" + (onlyEdited ? " on" : "")} onClick={() => setOnlyEdited(!onlyEdited)}>Edited only</button>
       </div>
       {range === "custom" && (
@@ -3025,6 +3027,7 @@ function SalesHistory({ sales, setSales, currentUser, isAdmin, branches, multiBr
         <StatTile icon={Banknote} tone="green" label="Total" value={money(sum)} />
         <StatTile icon={Tag} tone="amber" label="Discounts given" value={money(disc)} />
       </div>
+      {q.trim() && range !== "all" && <div style={{ fontSize: 12.5, color: colors.inkSoft }}>Searching all dates.</div>}
       {!isAdmin && <div style={{ fontSize: 12.5, color: colors.inkSoft }}>You see the sales you made. Tap one to reprint it{" "}or correct its prices/discounts (today's sales only).</div>}
       {viewSale && (
         <ReceiptModal viewing sale={viewSale} settings={settings} showToast={showToast} onClose={() => setViewId(null)}

@@ -1,4 +1,4 @@
-import { lineGross, lineDiscount, saleDiscount, saleSubtotal, saleQty, saleRefunded, saleNet } from "./lines.js";
+import { lineGross, lineDiscount, saleDiscount, saleSubtotal, saleQty, saleRefunded, saleCashBack, saleNet } from "./lines.js";
 // Draws a receipt onto a canvas and returns it as a PNG (base64), so it can be shared as a picture (WhatsApp etc.).
 const FONT = "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif";
 
@@ -37,6 +37,7 @@ export function buildReceiptRows(sale, settings, branch, money) {
   rows.push({ k: "pair", l: "Amount Due", r: money(sale.total), big: true });
   if (saleRefunded(sale) > 0) { rows.push({ k: "pair", l: "Returned by customer", r: "-" + money(saleRefunded(sale)), color: "#DC2626" }); rows.push({ k: "pair", l: "Net after returns", r: money(saleNet(sale)), boldRow: true }); }
   rows.push({ k: "pair", l: credit ? "Deposit Paid" : "Payment: Cash", r: money(sale.amountTendered) });
+  if (saleCashBack(sale) > 0) rows.push({ k: "pair", l: "Cash given back", r: "-" + money(saleCashBack(sale)), color: "#DC2626" });
   if (!credit && sale.amountTendered > sale.total) rows.push({ k: "pair", l: "Change", r: money(sale.amountTendered - sale.total) });
   rows.push({ k: "pair", l: credit ? "AMOUNT OWED" : "Balance", r: money(sale.balanceDue), color: credit ? "#DC2626" : null, boldRow: credit });
   if (Number(sale.prevBalance) > 0) { rows.push({ k: "pair", l: "Owed from before", r: money(sale.prevBalance) }); rows.push({ k: "pair", l: "TOTAL OWED NOW", r: money(Number(sale.prevBalance) + Number(sale.balanceDue || 0)), color: "#DC2626", boldRow: true }); }
