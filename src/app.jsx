@@ -11,7 +11,7 @@ import { renderReceiptPng } from "./receipt-image.js";
 import { repriceSale, reviseSale, applyDetails, stockDiffs } from "./saleedit.js";
 import { getUi, setUi, applyUi, THEMES, TEXT_SIZES } from "./appearance.js";
 import { LOGO_MARK } from "./logo.js";
-import { ReceiptSheet, ReceiptPageStyle, Logo as ReceiptLogo, PAPERS, TEMPLATES, paperOf, printWidthOf, prepareLogo } from "./receipt-sheet.jsx";
+import { ReceiptSheet, TestStrip, ReceiptPageStyle, Logo as ReceiptLogo, PAPERS, TEMPLATES, paperOf, printWidthOf, prepareLogo } from "./receipt-sheet.jsx";
 import { hasPin, setPin, clearPin, isLockedFlag, setLockedFlag } from "./security.js";
 import { LockScreen, OwnerApproval, PinSetup } from "./security.jsx";
 import { lineGross, lineDiscount, lineTotal, saleSubtotal, saleDiscount, saleQty, saleNet, saleNetCost, saleRefunded, saleCashBack, saleReturns, buildReturn, returnableQty, discountAmount, priceCart, canEditSale, effectiveUnit, round2 } from "./lines.js";
@@ -3919,6 +3919,7 @@ function PrinterPanel({ settings, showToast }) {
 const SAMPLE_SALE = { id: "sample", invoiceNo: "SAMPLE-001", date: "2026-01-15", time: "2026-01-15T10:30:00", paymentType: "cash", customerName: "", customerPhone: "", amountTendered: 6500, balanceDue: 0, total: 6000, cashierName: "Cashier", items: [{ productId: "a", name: "Bread loaf", qty: 2, price: 1500, discount: 0 }, { productId: "b", name: "Bottled water 75cl", qty: 6, price: 500, discount: 0 }] };
 function ShopSettings({ settings, setSettings, showToast, branches, setBranches, onResetTransactions, onResetEverything, fullState, restoreAll, cloudOn }) {
   const [form, setForm] = useState(settings);
+  const [stripOpen, setStripOpen] = useState(false);
   const [confirmMode, setConfirmMode] = useState(null); // null | "figures" | "everything" | "restore"
   const [confirmText, setConfirmText] = useState("");
   const [restoreData, setRestoreData] = useState(null);
@@ -4067,6 +4068,7 @@ function ShopSettings({ settings, setSettings, showToast, branches, setBranches,
                 </div>
                 <div style={{ fontSize: 12, color: colors.inkSoft, marginTop: 6 }}>Too much space on the left and the right side cut off? Make the width smaller (for example 64) and/or put a minus number in Move left (for example −4). Leave empty for the default.</div>
               </Field>
+              <Button variant="secondary" icon={PrinterIcon} onClick={() => setStripOpen(true)} style={{ marginBottom: 10 }}>Print test strip (ruler)</Button>
               <div style={{ fontSize: 12.5, fontWeight: 600, margin: "4px 0 6px" }}>Preview</div>
               <div style={{ background: colors.surface2, borderRadius: 12, padding: 10, overflowX: "auto" }}>
                 <ReceiptSheet preview sale={SAMPLE_SALE} settings={{ ...form, shopName: form.shopName || "My Shop" }} branch={null} isCredit={false} />
@@ -4077,6 +4079,17 @@ function ShopSettings({ settings, setSettings, showToast, branches, setBranches,
         </div>
       </div>
 
+      {stripOpen && (
+        <Modal title="Printer test strip" onClose={() => setStripOpen(false)}>
+          <p style={{ marginTop: 0, color: colors.inkSoft, fontSize: 13.5, lineHeight: 1.5 }}>Print this on the receipt printer. It uses the paper size, width and Move left values you have typed above (you do not have to save first). Make sure the whole box shows on the paper, with a small gap on the left and the right line visible. If not, change the numbers and print again.</p>
+          <ReceiptPageStyle settings={form} />
+          <div id="printable-receipt" className="force-light" style={{ ...styles.receiptPrintArea, padding: 0, border: "none" }}><TestStrip settings={form} /></div>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 12 }}>
+            <Button variant="secondary" onClick={() => setStripOpen(false)}>Close</Button>
+            <Button icon={PrinterIcon} onClick={() => window.print()}>Print</Button>
+          </div>
+        </Modal>
+      )}
       <BranchManager
         branches={branches} setBranches={setBranches} showToast={showToast}
         products={fullState.products} sales={fullState.sales} purchases={fullState.purchases} expenses={fullState.expenses} users={fullState.users}

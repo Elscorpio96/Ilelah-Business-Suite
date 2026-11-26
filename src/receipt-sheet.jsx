@@ -253,3 +253,30 @@ export function prepareLogo(file, maxSide = 360) {
     img.src = url;
   });
 }
+
+// A ruler strip for calibrating a printer: the box is exactly the print width, with a millimetre ruler under it.
+export function TestStrip({ settings }) {
+  const p = paperOf(settings);
+  const w = p.tall ? p.w : printWidthOf(settings);
+  const ticks = []; for (let m = 0; m <= w; m += 5) ticks.push(m);
+  const black = "#000";
+  return (
+    <div style={{ width: `${w}mm`, boxSizing: "border-box", border: `0.6mm solid ${black}`, padding: "2mm 0 2mm", background: "#fff", color: black, fontFamily: "monospace", fontSize: "3.4mm", lineHeight: 1.25 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", padding: "0 1.5mm", fontWeight: 700 }}><span>◄ LEFT</span><span>RIGHT ►</span></div>
+      <div style={{ textAlign: "center", fontWeight: 700, margin: "1.5mm 0" }}>PRINTER TEST · {w} mm</div>
+      <div style={{ position: "relative", height: "9mm", margin: "0 0 1mm" }}>
+        {ticks.map((m) => (
+          <div key={m} style={{ position: "absolute", left: `${m}mm`, top: 0, width: 0, borderLeft: `0.3mm solid ${black}`, height: m % 10 === 0 ? "5mm" : "3mm" }}>
+            {m % 10 === 0 && <span style={{ position: "absolute", top: "5mm", left: m === 0 ? "0.8mm" : m + 5 > w ? "-4.2mm" : "-1.6mm", fontSize: "3mm" }}>{m === 0 ? "" : m}</span>}
+          </div>
+        ))}
+      </div>
+      <div style={{ padding: "0 1.5mm", fontSize: "3mm" }}>
+        <div>Box complete on all 4 sides? Good.</div>
+        <div>Right line missing? Make the width smaller.</div>
+        <div>Gap on the left? Use a minus in Move left.</div>
+        <div style={{ marginTop: "1mm", fontWeight: 700 }}>Last number you can see: ____</div>
+      </div>
+    </div>
+  );
+}
